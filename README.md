@@ -1,6 +1,6 @@
 # LanceDB.jl
 
-Julia bindings for [LanceDB](https://lancedb.com/), using the published `LanceDB_C_jll` and the lancedb-c 0.33 C ABI. Tables.jl connects ingestion and query results to the Julia data ecosystem. The API is experimental.
+Julia bindings for [lancedb-c](https://github.com/lancedb/lancedb-c), the C API for LanceDB. Tables.jl connects ingestion and query results to the Julia data ecosystem. The API is experimental.
 
 [Documentation](https://indexthm.github.io/LanceDB.jl/dev/) · [User guide](docs/src/guide.md) · [Capabilities and limits](docs/src/capabilities.md)
 
@@ -88,4 +88,4 @@ Compare `gen/bindings.generated.jl` with `src/api.jl`, `src/ctypes.jl` and high-
 
 ## License
 
-[Apache 2.0](LICENSE). The native library's license is included in its JLL artifact.
+Licensed under the [Apache License 2.0](LICENSE), the same license used by [lancedb-c](https://github.com/lancedb/lancedb-c/blob/main/LICENSE).
