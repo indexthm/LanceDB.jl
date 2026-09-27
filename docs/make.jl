@@ -1,7 +1,7 @@
 using LanceDB
 using Documenter
 
-DocMeta.setdocmeta!(LanceDB, :DocTestSetup, :(using LanceDB, Tables); recursive=true)
+DocMeta.setdocmeta!(LanceDB, :DocTestSetup, :(using LanceDB, DataFrames); recursive=true)
 makedocs(;
     root=@__DIR__,
     sitename="LanceDB.jl",

@@ -10,7 +10,7 @@ The native library is supplied by `LanceDB_C_jll` (lancedb-c 0.33). The availabl
 | Filter and select | `query`, `filter_where`, `filter_expr`, `select_cols`, `limit`, `offset` |
 | Search embeddings | `vector_search`, `embedding_search` |
 | Manage indexes | `create_scalar_index`, `create_vector_index`, `list_indices`, `index_stats`, `optimize` |
-| Read results | `Tables.columns`, `Tables.rows`, `DataFrame(result)` |
+| Read results | `DataFrame(result)`, `eachrow(df)` |
 | Store media and metadata | `BinaryColumn`, `ListColumn`, nested NamedTuples |
 | Build training batches | `take_ids`, `IDDataset`, `batches`, `sample_rows`, `with_embeddings` |
 | Inspect a table | `table_schema`, `table_version`, `get_metadata`, `list_versions` |
@@ -21,11 +21,13 @@ The native library is supplied by `LanceDB_C_jll` (lancedb-c 0.33). The availabl
 Use `open` blocks for databases and existing tables:
 
 ```julia
+using LanceDB, DataFrames
+
 open(Connection, "./my-database") do db
     open(Table, db, "items") do table
         result = execute(query(table) |> limit(10))
         try
-            rows = Tables.columns(result)
+            rows = DataFrame(result)
         finally
             close(result)
         end

@@ -5,9 +5,9 @@ Store media as bytes, attach metadata and embeddings, then fetch samples in a ch
 ## Store bytes and typed metadata
 
 ```@example media
-using LanceDB, Tables, Random
+using LanceDB, DataFrames, Random
 
-data = (
+data = DataFrame(
     id = [101, 205],
     media = BinaryColumn([UInt8[1, 2, 3], UInt8[4, 5]]), # toy bytes; replace with read("cat.jpg"), etc.
     tags = ListColumn([["cat", "outdoor"], ["dog"]]),
@@ -30,13 +30,13 @@ When another package converts your columns, reapply `BinaryColumn` or `ListColum
 ## Fetch in requested order
 
 ```@example media
-selected = take_ids(tbl, [205, 101, 205]; columns=[:id, :media])
+selected = DataFrame(take_ids(tbl, [205, 101, 205]; columns=[:id, :media]))
 @assert selected.id == [205, 101, 205]
 
 ds = IDDataset(tbl; columns=[:id, :media, :tags])
 one_row = ds[1]            # a NamedTuple row, Julia's 1-based position in ds.ids
-some_rows = ds[[2, 1, 2]]  # a Tables.jl column table
-sampled = sample_rows(ds, 10; replace=true, rng=MersenneTwister(42))
+some_rows = DataFrame(ds[[2, 1, 2]])
+sampled = DataFrame(sample_rows(ds, 10; replace=true, rng=MersenneTwister(42)))
 nothing # hide
 ```
 
@@ -72,10 +72,10 @@ Pass `drop_last=true` to omit a final short batch. Construct a new iterator for 
 ```@example media
 # A deliberately simple deterministic example, not a semantic embedding model.
 encoder(inputs) = [Float32[length(x), 1] for x in inputs]
-encoded = with_embeddings((id=[1,2], text=["cat","longer text"]), :text, encoder)
+encoded = with_embeddings(DataFrame(id=[1,2], text=["cat","longer text"]), :text, encoder)
 text_tbl = create_table(conn, "text", encoded)
 result = embedding_search(text_tbl, "cat", encoder) |> limit(1) |> execute
-@assert Tables.columns(result).id == [1] # hide
+@assert DataFrame(result).id == [1] # hide
 nothing # hide
 ```
 

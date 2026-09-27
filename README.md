@@ -11,14 +11,14 @@ Julia 1.10 or later is required. No Rust compiler or Python installation is need
 ```julia
 using Pkg
 Pkg.add(url="https://github.com/indexthm/LanceDB.jl")
-Pkg.add("Tables")
+Pkg.add("DataFrames")
 ```
 
 ```julia
-using LanceDB, Tables
+using LanceDB, DataFrames
 
 open(Connection, "./my-database") do db
-    table = create_table(db, "items", (
+    table = create_table(db, "items", DataFrame(
         id = [1, 2],
         text = ["cat", "dog"],
         embedding = [Float32[1, 0], Float32[0, 1]],
@@ -26,7 +26,7 @@ open(Connection, "./my-database") do db
     try
         result = vector_search(table, [1.0, 0.0], :embedding) |> limit(1) |> execute
         try
-            println(Tables.columns(result))
+            println(DataFrame(result))
         finally
             close(result)
         end

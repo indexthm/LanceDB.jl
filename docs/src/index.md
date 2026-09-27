@@ -15,18 +15,18 @@ From the repository root, use your existing Julia installation:
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
-To use the checkout from another project, run `Pkg.develop(path="/path/to/LanceDB.jl")` in that project's Julia environment. Add `Tables` to that environment if your code imports it directly.
+To use the checkout from another project, run `Pkg.develop(path="/path/to/LanceDB.jl")` in that project's Julia environment. Install `DataFrames` in that environment with `Pkg.add("DataFrames")` to run the examples below.
 
 ## Create and search a table
 
 This example is executed during the documentation build. It creates a fresh temporary database, uses the published JLL and closes its handles explicitly.
 
 ```@example quickstart
-using LanceDB, Tables
+using LanceDB, DataFrames
 
 mktempdir() do path
     open(Connection, path) do db
-        table = create_table(db, "items", (
+        table = create_table(db, "items", DataFrame(
             id = [1, 2, 3],
             text = ["cat", "dog", "bird"],
             embedding = [Float32[1, 0], Float32[0, 1], Float32[0.5, 0.5]],
@@ -35,7 +35,7 @@ mktempdir() do path
             result = vector_search(table, Float32[1, 0], :embedding) |>
                      limit(1) |> execute
             try
-                rows = Tables.columns(result)
+                rows = DataFrame(result)
                 @assert rows.id == [1]
                 println("Nearest item: ", only(rows.text))
             finally

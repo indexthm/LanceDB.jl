@@ -1,21 +1,21 @@
 # Tables and queries
 
-## Tables.jl data
+## Write DataFrames
 
 `create_table` and `add` accept Tables.jl-compatible column and row tables. The package does not require DataFrames.jl, CSV.jl or Arrow.jl at runtime; install them in your own environment when using their table implementations.
 
 ```@example writes
-using LanceDB, Tables
+using LanceDB, DataFrames
 
 mktempdir() do path
     open(Connection, path) do db
-        table = create_table(db, "items", (id=[1, 2], text=["cat", "dog"]))
+        table = create_table(db, "items", DataFrame(id=[1, 2], text=["cat", "dog"]))
         try
-            add(table, (id=[3], text=["bird"]))
-            merge_insert(table, (id=[2, 4], text=["updated dog", "fish"]), :id)
+            add(table, DataFrame(id=[3], text=["bird"]))
+            merge_insert(table, DataFrame(id=[2, 4], text=["updated dog", "fish"]), :id)
             delete_rows(table, col(:id) == 4)
             set_metadata!(table, Dict("source" => "example"))
-            println(take_ids(table, [2, 1]))
+            println(DataFrame(take_ids(table, [2, 1])))
         finally
             close(table)
         end
@@ -23,7 +23,7 @@ mktempdir() do path
 end
 ```
 
-Use `Tables.columns(result)` for owned Julia columns and `Tables.rows(result)` for row iteration. `Tables.materializer(TableSink(db, "name"))` creates a table; `Tables.materializer(table)` appends to it.
+Use `df = DataFrame(result)` to obtain a DataFrame, `df.id` to access a column, and `eachrow(df)` to iterate rows. NamedTuples and other Tables.jl-compatible inputs are also accepted.
 
 `append_partitions!(table, source)` converts and commits each `Tables.partitions(source)` partition separately. It is not an atomic multi-batch transaction. `Tables.partitions(result)` avoids an extra concatenation of result batches, but the native C API has already collected the complete query result.
 
@@ -32,11 +32,11 @@ Use `Tables.columns(result)` for owned Julia columns and `Tables.rows(result)` f
 The following independent example also runs during documentation builds.
 
 ```@example filters
-using LanceDB, Tables
+using LanceDB, DataFrames
 
 mktempdir() do path
     open(Connection, path) do db
-        table = create_table(db, "items", (id=[1, 2, 3], score=[10, 20, 30]))
+        table = create_table(db, "items", DataFrame(id=[1, 2, 3], score=[10, 20, 30]))
         try
             q = query(table) |>
                 filter_expr(col(:score) >= 20) |>
@@ -44,7 +44,7 @@ mktempdir() do path
                 limit(10)
             result = execute(q)
             try
-                rows = Tables.columns(result)
+                rows = DataFrame(result)
                 @assert sort(rows.id) == [2, 3]
                 println(sort(rows.id))
             finally
@@ -96,7 +96,7 @@ Version listing does not provide checkout, rollback or snapshot pinning. See [Ca
 This example requires your own existing bucket, table and credentials. It is not executed during documentation builds.
 
 ```julia
-using LanceDB
+using LanceDB, DataFrames
 
 options = Dict(
     "aws_region" => "us-east-1",
@@ -109,7 +109,7 @@ end
 
 open(Connection, "s3://my-bucket/my-database"; storage_options=options) do db
     open(Table, db, "samples") do table
-        rows = take_ids(table, [42, 7]; id_column=:id)
+        rows = DataFrame(take_ids(table, [42, 7]; id_column=:id))
         println(rows)
     end
 end

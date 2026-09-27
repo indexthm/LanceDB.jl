@@ -33,8 +33,10 @@ Start a full-table scan on `tbl`. Chain builder methods before calling
 `execute` to materialise results:
 
 ```julia
+using DataFrames
+
 result = query(tbl) |> filter_where("year > 2020") |> limit(100) |> execute
-cols   = Tables.columns(result)
+df     = DataFrame(result)
 ```
 """
 query(tbl::Table) = Query(tbl)
@@ -218,13 +220,15 @@ Start an approximate nearest-neighbour (ANN) search for rows whose
 calling `execute`:
 
 ```julia
-cols = Tables.columns(
+using DataFrames
+
+df = DataFrame(
     vector_search(tbl, Float32[0.1, 0.8, 0.3], "embedding") |>
     distance_type(Cosine) |>
     limit(5) |>
     execute
 )
-println(cols[:_distance])   # ascending L2/cosine distances
+println(df._distance)   # ascending L2/cosine distances
 ```
 
 The result always includes a `_distance` column with the computed distances.
