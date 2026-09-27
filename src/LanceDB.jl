@@ -34,12 +34,14 @@ include("resources.jl")
 include("management.jl")
 include("expressions_extra.jl")
 include("dataset.jl")
+include("embeddings.jl")
 
 # ── Exports ───────────────────────────────────────────────────────────────────
 
 # Types
 export BinaryColumn, ListColumn
 export IDDataset, take_ids, batches, sample_rows
+export with_embeddings, embedding_search
 export Connection, Table, TableSink, Query, VectorQuery, QueryResult, LanceDBExpr
 export LanceDBException
 

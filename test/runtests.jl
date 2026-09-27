@@ -10,6 +10,7 @@ using Tables
     include("test_arrow_nested.jl")
     include("test_features.jl")
     include("test_multimodal.jl")
+    include("test_embeddings.jl")
     include("test_isopen_reopen.jl")
     include("test_table.jl")
     include("test_query.jl")
