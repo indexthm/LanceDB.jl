@@ -32,4 +32,5 @@ using Tables
     include("test_dataframes.jl")
     include("test_csv_extension.jl")
     include("test_json_extension.jl")
+    include("test_sqlite_extension.jl")
 end

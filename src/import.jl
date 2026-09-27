@@ -34,3 +34,15 @@ The complete input is parsed and validated in memory before a single write.
 An empty row array needs explicit `types` to describe its columns.
 """
 import_json(args...; kwargs...) = throw(ArgumentError("load JSON.jl with `using JSON` before calling import_json"))
+
+"""
+    import_sqlite(conn, name, db; source_table=nothing, sql=nothing, params=()) -> Table
+    import_sqlite(table, db; source_table=nothing, sql=nothing, params=()) -> Table
+
+Load SQLite.jl to import from an open `SQLite.DB`. Specify either `source_table`
+for a whole table or `sql` for a query, with optional bound `params`.
+Results are collected in memory before writing; the source database stays open.
+SQLite NULL becomes `missing`; BLOB columns become `BinaryColumn` values.
+Use SQL CAST to normalize columns containing incompatible storage types.
+"""
+import_sqlite(args...; kwargs...) = throw(ArgumentError("load SQLite.jl with `using SQLite` before calling import_sqlite"))

@@ -30,5 +30,6 @@ jobs:
           @assert Base.get_extension(LanceDB, :LanceDBArrowExt) === nothing
           @assert Base.get_extension(LanceDB, :LanceDBCSVExt) === nothing
           @assert Base.get_extension(LanceDB, :LanceDBJSONExt) === nothing
+          @assert Base.get_extension(LanceDB, :LanceDBSQLiteExt) === nothing
       - name: Test package and optional integration
         run: julia --color=yes --project=. -e 'using Pkg; Pkg.test()'

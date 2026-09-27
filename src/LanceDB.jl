@@ -34,7 +34,7 @@ include("import.jl")
 export BinaryColumn, ListColumn
 export IDDataset, take_ids, batches, sample_rows
 export with_embeddings, embedding_search
-export import_csv, import_json
+export import_csv, import_json, import_sqlite
 export Connection, Table, TableSink, Query, VectorQuery, QueryResult, LanceDBExpr
 export LanceDBException
 

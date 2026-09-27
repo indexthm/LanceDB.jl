@@ -40,7 +40,7 @@ Run the example in a fresh database, or use `open_table` for an existing table. 
 
 ## Optional integrations
 
-Load CSV.jl or JSON.jl to enable `import_csv` or `import_json` for file paths and IO. JSON imports support row objects, column arrays and JSON Lines; both import functions can create a table or append to one. These packages are optional dependencies.
+Load CSV.jl or JSON.jl to enable `import_csv` or `import_json` for file paths and IO. JSON imports support row objects, column arrays and JSON Lines; both import functions can create a table or append to one. Load SQLite.jl to enable `import_sqlite` for an existing SQLite connection, with a source table or parameterized SQL query. These packages are optional dependencies.
 
 Loading Arrow.jl enables the Arrow extension: supported `Arrow.Table` columns retain their binary/list layouts, and eligible primitive buffers are borrowed during ingestion. Arrow is not required for ordinary Tables.jl sources. DataFrames and SubDataFrames work through Tables.jl without a package-specific extension. See [the guide](docs/src/guide.md#Optional-integrations) for examples and limitations.
 

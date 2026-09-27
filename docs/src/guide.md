@@ -188,6 +188,38 @@ JSON nulls and absent fields become `missing`. Ordinary floating columns use Flo
 
 Use `types` to set other column types, such as `Dict(:score=>Float64, :tags=>Vector{String})`. Explicit types are needed for empty lists with no inferable elements or an empty row array. Flatten nested objects and nested arrays before importing. When appending, use types and vector-column selections consistent with the existing table.
 
+### SQLite databases
+
+Install SQLite.jl with `Pkg.add("SQLite")`, then load it to enable `import_sqlite`. Choose `source_table` to copy a whole table or `sql` to select rows and columns. Query parameters are passed separately through `params`.
+
+```@example sqlite
+using LanceDB, SQLite, DataFrames
+
+source = SQLite.DB() # Use SQLite.DB("input.sqlite") for an existing file.
+try
+    SQLite.load!(DataFrame(id=[1, 2], text=["cat", "dog"], score=[0.8, 0.9]), source, "items")
+    mktempdir() do path
+        open(Connection, path) do db
+            table = import_sqlite(db, "items", source; source_table="items")
+            try
+                import_sqlite(table, source;
+                    sql="SELECT id + 2 AS id, text, score FROM items WHERE score > ?",
+                    params=(0.85,))
+                println(DataFrame(take_ids(table, [1, 4])))
+            finally
+                close(table)
+            end
+        end
+    end
+finally
+    SQLite.close(source)
+end
+```
+
+The source connection remains open after import. Results are collected in memory before writing; use bounded queries for large sources. SQLite NULL becomes `missing`, REAL values remain Float64, and BLOB values are imported as binary columns. SQLite has no native embedding type: decode embeddings stored as JSON text or BLOBs before passing them to `create_table` or `add`. If a SQLite column mixes incompatible storage types, normalize it in your SELECT with `CAST`. Give joined columns unique aliases.
+
+Existing SQLite query results also work with the ordinary Tables interface, without this convenience function. See the [SQLite.jl documentation](https://juliadatabases.org/SQLite.jl/stable/) for query and parameter syntax.
+
 ### Arrow and DataFrames
 
 Arrow is a weak dependency. Install it in your application and load both packages to enable `LanceDBArrowExt` automatically:
