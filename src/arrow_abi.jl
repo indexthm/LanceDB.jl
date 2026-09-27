@@ -48,9 +48,15 @@ end
 
 # ── Memory helpers ────────────────────────────────────────────────────────────
 
+function _checked_malloc(n::Integer)
+    ptr = Libc.malloc(n)
+    ptr == C_NULL && n != 0 && throw(OutOfMemoryError())
+    ptr
+end
+
 function _malloc_cstr(s::AbstractString)::Ptr{UInt8}
     n   = ncodeunits(s)
-    ptr = Ptr{UInt8}(Libc.malloc(n + 1))
+    ptr = Ptr{UInt8}(_checked_malloc(n + 1))
     GC.@preserve s unsafe_copyto!(ptr, pointer(codeunits(s)), n)
     unsafe_store!(ptr, 0x00, n + 1)
     ptr
@@ -62,12 +68,19 @@ end
 # does NOT call release. We free memory ourselves in release_arrow_schema.
 
 function _alloc_leaf_schema(format::String, name::String)::Ptr{ArrowSchema}
-    ptr = Ptr{ArrowSchema}(Libc.malloc(sizeof(ArrowSchema)))
-    unsafe_store!(ptr, ArrowSchema(
-        _malloc_cstr(format), _malloc_cstr(name), C_NULL,
-        0, 0, C_NULL, C_NULL, C_NULL, C_NULL
-    ))
-    ptr
+    _check_string(format); _check_string(name)
+    fmt = _malloc_cstr(format)
+    nm = Ptr{UInt8}(C_NULL)
+    try
+        nm = _malloc_cstr(name)
+        ptr = Ptr{ArrowSchema}(_checked_malloc(sizeof(ArrowSchema)))
+        unsafe_store!(ptr, ArrowSchema(fmt, nm, C_NULL, 0, 0, C_NULL, C_NULL, C_NULL, C_NULL))
+        return ptr
+    catch
+        Libc.free(fmt)
+        nm == C_NULL || Libc.free(nm)
+        rethrow()
+    end
 end
 
 """
@@ -87,17 +100,42 @@ via `release_arrow_schema`.
 - `"+s"`     — Struct (set children manually)
 """
 function make_schema(fields::Vector{Pair{String,String}})::Ptr{ArrowSchema}
-    n        = length(fields)
-    children = Ptr{Ptr{ArrowSchema}}(Libc.malloc(n * sizeof(Ptr{Cvoid})))
-    for (i, (fname, fmt)) in enumerate(fields)
-        unsafe_store!(children, _alloc_leaf_schema(fmt, fname), i)
+    foreach(p -> (_check_string(first(p)); _check_string(last(p))), fields)
+    children = Ptr{ArrowSchema}[]
+    sizehint!(children,length(fields))
+    try
+        for (fname,fmt) in fields
+            push!(children,_alloc_leaf_schema(fmt,fname))
+        end
+    catch
+        foreach(release_arrow_schema,children)
+        rethrow()
     end
-    root = Ptr{ArrowSchema}(Libc.malloc(sizeof(ArrowSchema)))
-    unsafe_store!(root, ArrowSchema(
-        _malloc_cstr("+s"), _malloc_cstr(""), C_NULL,
-        0, Int64(n), Ptr{Cvoid}(children), C_NULL, C_NULL, C_NULL
-    ))
-    root
+    _schema_with_children("+s","",children)
+end
+
+# Takes ownership of all child schemas, including if construction fails.
+function _schema_with_children(format, name, children)
+    root = Ptr{ArrowSchema}(C_NULL)
+    ptrs = Ptr{Ptr{ArrowSchema}}(C_NULL)
+    try
+        root = _alloc_leaf_schema(format,name)
+        if !isempty(children)
+            ptrs = Ptr{Ptr{ArrowSchema}}(_checked_malloc(length(children)*sizeof(Ptr{Cvoid})))
+            for (i,child) in enumerate(children)
+                unsafe_store!(ptrs,child,i)
+            end
+        end
+        s = unsafe_load(root)
+        unsafe_store!(root,ArrowSchema(s.format,s.name,C_NULL,0,length(children),
+                                      ptrs,C_NULL,C_NULL,C_NULL))
+        return root
+    catch
+        root == C_NULL || release_arrow_schema(root)
+        ptrs == C_NULL || Libc.free(ptrs)
+        foreach(release_arrow_schema,children)
+        rethrow()
+    end
 end
 
 """
@@ -107,27 +145,21 @@ Convenience builder for the canonical LanceDB test schema:
 `{key_field: utf8, vec_field: FixedSizeList<Float32>[dim]}`.
 """
 function make_vector_schema(key_field::String, vec_field::String, dim::Int)::Ptr{ArrowSchema}
-    float_child  = _alloc_leaf_schema("f", "")
-    vec_children = Ptr{Ptr{ArrowSchema}}(Libc.malloc(sizeof(Ptr{Cvoid})))
-    unsafe_store!(vec_children, float_child, 1)
-    vec_schema   = Ptr{ArrowSchema}(Libc.malloc(sizeof(ArrowSchema)))
-    unsafe_store!(vec_schema, ArrowSchema(
-        _malloc_cstr("+w:$dim"), _malloc_cstr(vec_field), C_NULL,
-        0, 1, Ptr{Cvoid}(vec_children), C_NULL, C_NULL, C_NULL
-    ))
-
-    key_schema   = _alloc_leaf_schema("u", key_field)
-
-    children     = Ptr{Ptr{ArrowSchema}}(Libc.malloc(2 * sizeof(Ptr{Cvoid})))
-    unsafe_store!(children, key_schema, 1)
-    unsafe_store!(children, vec_schema, 2)
-
-    root = Ptr{ArrowSchema}(Libc.malloc(sizeof(ArrowSchema)))
-    unsafe_store!(root, ArrowSchema(
-        _malloc_cstr("+s"), _malloc_cstr(""), C_NULL,
-        0, 2, Ptr{Cvoid}(children), C_NULL, C_NULL, C_NULL
-    ))
-    root
+    dim > 0 || throw(ArgumentError("vector dimension must be positive"))
+    _check_string(key_field); _check_string(vec_field)
+    children = Ptr{ArrowSchema}[]
+    sizehint!(children,2)
+    try
+        push!(children,_alloc_leaf_schema("u",key_field))
+        elements = Ptr{ArrowSchema}[]
+        sizehint!(elements,1)
+        push!(elements,_alloc_leaf_schema("f","item"))
+        push!(children,_schema_with_children("+w:$dim",vec_field,elements))
+    catch
+        foreach(release_arrow_schema,children)
+        rethrow()
+    end
+    _schema_with_children("+s","",children)
 end
 
 # ── Memory release ────────────────────────────────────────────────────────────

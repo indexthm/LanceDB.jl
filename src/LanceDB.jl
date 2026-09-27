@@ -2,6 +2,7 @@ module LanceDB
 
 using Arrow
 using Tables
+using Dates
 import LanceDB_C_jll
 
 # ── Library path ──────────────────────────────────────────────────────────────
@@ -21,6 +22,7 @@ include("api.jl")         # raw ccall wrappers matching the published C ABI
 include("error.jl")       # LanceDBException, check(), check_ptr()
 include("arrow_abi.jl")   # ArrowSchema / ArrowArray layout + schema builders
 include("arrow_data.jl")  # Tables.jl → Arrow C ABI (_to_arrow_c_abi, _make_reader)
+include("column_types.jl")
 include("connection.jl")  # Connection, open_table, create_table, drop_table
 include("table.jl")       # Table, count_rows, add, delete_rows, merge_insert
 include("result.jl")      # QueryResult (Tables.jl interface)
@@ -32,6 +34,7 @@ include("resources.jl")
 # ── Exports ───────────────────────────────────────────────────────────────────
 
 # Types
+export BinaryColumn, ListColumn
 export Connection, Table, TableSink, Query, VectorQuery, QueryResult, LanceDBExpr
 export LanceDBException
 

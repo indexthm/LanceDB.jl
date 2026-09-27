@@ -6,6 +6,7 @@ using Tables
     include("test_connection.jl")
     include("test_current_abi.jl")
     include("test_resources.jl")
+    include("test_arrow_export.jl")
     include("test_isopen_reopen.jl")
     include("test_table.jl")
     include("test_query.jl")
