@@ -1,6 +1,5 @@
 module LanceDB
 
-using Arrow
 using Tables
 using Dates
 using Random
