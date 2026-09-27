@@ -6,7 +6,7 @@ Build a vector index on `column` (or a list of columns) to accelerate ANN
 search. The default `type=Auto` lets LanceDB pick the algorithm; specify
 `IVFFlat`, `IVFPQ`, `IVFHNSWpq`, or `IVFHNSWsq` explicitly when needed.
 
-IVF-based indexes require at least 256 rows to train. After adding new rows
+Training requirements depend on the index type and its configuration. After adding new rows
 call `optimize(tbl; type=OptimizeIndex)` to index the delta.
 
 ```julia
@@ -18,16 +18,20 @@ create_vector_index(tbl, "embedding"; type=IVFFlat, config=cfg)
 function create_vector_index(tbl::Table, columns::Vector{String};
                               type::IndexType=Auto,
                               config::LanceDBVectorIndexConfig=LanceDBVectorIndexConfig())
-    ptrs   = [pointer(c) for c in columns]
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    GC.@preserve columns begin
-        code = lancedb_table_create_vector_index(
-            tbl.handle,
-            pointer(ptrs), Csize_t(length(columns)),
-            Cint(type), Ref(config), errmsg
-        )
+    _assert_live(tbl)
+    GC.@preserve tbl begin
+        foreach(_check_string, columns)
+        ptrs   = [pointer(c) for c in columns]
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        GC.@preserve columns ptrs begin
+            code = lancedb_table_create_vector_index(
+                tbl.handle,
+                pointer(ptrs), Csize_t(length(columns)),
+                Cint(type), Ref(config), errmsg
+            )
+        end
+        check(code, errmsg)
     end
-    check(code, errmsg)
 end
 
 create_vector_index(tbl::Table, column::String; kwargs...) =
@@ -50,16 +54,20 @@ create_scalar_index(tbl, "category"; type=Bitmap)
 function create_scalar_index(tbl::Table, columns::Vector{String};
                               type::IndexType=BTree,
                               config::LanceDBScalarIndexConfig=LanceDBScalarIndexConfig())
-    ptrs   = [pointer(c) for c in columns]
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    GC.@preserve columns begin
-        code = lancedb_table_create_scalar_index(
-            tbl.handle,
-            pointer(ptrs), Csize_t(length(columns)),
-            Cint(type), Ref(config), errmsg
-        )
+    _assert_live(tbl)
+    GC.@preserve tbl begin
+        foreach(_check_string, columns)
+        ptrs   = [pointer(c) for c in columns]
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        GC.@preserve columns ptrs begin
+            code = lancedb_table_create_scalar_index(
+                tbl.handle,
+                pointer(ptrs), Csize_t(length(columns)),
+                Cint(type), Ref(config), errmsg
+            )
+        end
+        check(code, errmsg)
     end
-    check(code, errmsg)
 end
 
 create_scalar_index(tbl::Table, column::String; kwargs...) =
@@ -70,7 +78,8 @@ create_scalar_index(tbl::Table, column::String; kwargs...) =
     create_fts_index(tbl, columns::Vector{String}; ...)
 
 Build a full-text search (FTS) index on a UTF-8 string `column`. The index
-is named `\${column}_idx` and enables efficient keyword search. Tokenization
+is named `\${column}_idx`. The current C API supports creating the index but
+does not expose a full-text query builder. Tokenization
 options (language, stemming, stop words, etc.) are set via
 `LanceDBFtsIndexConfig`.
 
@@ -84,17 +93,28 @@ create_fts_index(tbl, "body"; config=cfg)
 ```
 """
 function create_fts_index(tbl::Table, columns::Vector{String};
-                           config::LanceDBFtsIndexConfig=LanceDBFtsIndexConfig())
-    ptrs   = [pointer(c) for c in columns]
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    GC.@preserve columns begin
-        code = lancedb_table_create_fts_index(
-            tbl.handle,
-            pointer(ptrs), Csize_t(length(columns)),
-            Ref(config), errmsg
-        )
+                           config::LanceDBFtsIndexConfig=LanceDBFtsIndexConfig(),
+                           base_tokenizer::Union{Nothing,AbstractString}=nothing,
+                           language::Union{Nothing,AbstractString}=nothing)
+    _assert_live(tbl)
+    tokenizer_owner = base_tokenizer === nothing ? nothing : String(_check_string(base_tokenizer))
+    language_owner = language === nothing ? nothing : String(_check_string(language))
+    config = deepcopy(config)
+    tokenizer_owner === nothing || (config.base_tokenizer = pointer(tokenizer_owner))
+    language_owner === nothing || (config.language = pointer(language_owner))
+    GC.@preserve tbl tokenizer_owner language_owner begin
+        foreach(_check_string, columns)
+        ptrs   = [pointer(c) for c in columns]
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        GC.@preserve columns ptrs begin
+            code = lancedb_table_create_fts_index(
+                tbl.handle,
+                pointer(ptrs), Csize_t(length(columns)),
+                Ref(config), errmsg
+            )
+        end
+        check(code, errmsg)
     end
-    check(code, errmsg)
 end
 
 create_fts_index(tbl::Table, column::String; kwargs...) =
@@ -107,16 +127,21 @@ Return the names of all indexes on `tbl`. Index names follow the pattern
 `\${column}_idx` (e.g. `"embedding_idx"`, `"year_idx"`).
 """
 function list_indices(tbl::Table)::Vector{String}
-    indices_out = Ref{Ptr{Ptr{UInt8}}}(C_NULL)
-    count_out   = Ref{Csize_t}(0)
-    errmsg      = Ref{Ptr{UInt8}}(C_NULL)
-    code = lancedb_table_list_indices(tbl.handle, indices_out, count_out, errmsg)
-    check(code, errmsg)
-    n   = count_out[]
-    ptr = indices_out[]
-    result = [unsafe_string(unsafe_load(ptr, i)) for i in 1:n]
-    lancedb_free_index_list(ptr, n)
-    result
+    _assert_live(tbl)
+    GC.@preserve tbl begin
+        indices_out = Ref{Ptr{Ptr{UInt8}}}(C_NULL)
+        count_out   = Ref{Csize_t}(0)
+        errmsg      = Ref{Ptr{UInt8}}(C_NULL)
+        code = lancedb_table_list_indices(tbl.handle, indices_out, count_out, errmsg)
+        check(code, errmsg)
+        n   = count_out[]
+        ptr = indices_out[]
+        try
+            [unsafe_string(unsafe_load(ptr, i)) for i in 1:n]
+        finally
+            lancedb_free_index_list(ptr, n)
+        end
+    end
 end
 
 """
@@ -126,8 +151,12 @@ Delete the index named `name` from `tbl`. Throws `LanceDBException` if the
 index does not exist. Use `list_indices(tbl)` to find valid names.
 """
 function drop_index(tbl::Table, name::AbstractString)
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    check(lancedb_table_drop_index(tbl.handle, name, errmsg), errmsg)
+    _assert_live(tbl)
+    _check_string(name)
+    GC.@preserve tbl begin
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        check(lancedb_table_drop_index(tbl.handle, name, errmsg), errmsg)
+    end
 end
 
 """
@@ -142,8 +171,12 @@ fields:
 Call `optimize(tbl; type=OptimizeIndex)` to reduce `num_unindexed_rows` to zero.
 """
 function index_stats(tbl::Table, name::AbstractString)::LanceDBIndexStats
-    stats  = Ref(LanceDBIndexStats(0, 0, 0))
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    check(lancedb_table_index_stats(tbl.handle, name, stats, errmsg), errmsg)
-    stats[]
+    _assert_live(tbl)
+    _check_string(name)
+    GC.@preserve tbl begin
+        stats  = Ref(LanceDBIndexStats(0, 0, 0))
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        check(lancedb_table_index_stats(tbl.handle, name, stats, errmsg), errmsg)
+        stats[]
+    end
 end

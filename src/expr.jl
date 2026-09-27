@@ -12,7 +12,7 @@ mutable struct LanceDBExpr
     function LanceDBExpr(handle::Ptr{LanceDBExprHandle})
         check_ptr(handle, "expression constructor received NULL handle")
         e = new(handle, false)
-        finalizer(e -> e._consumed || lancedb_expr_free(e.handle), e)
+        finalizer(close, e)
         e
     end
 end
@@ -24,7 +24,9 @@ end
 function _consume(e::LanceDBExpr)::Ptr{LanceDBExprHandle}
     _assert_live(e)
     e._consumed = true
-    e.handle
+    handle = e.handle
+    e.handle = C_NULL
+    handle
 end
 
 # ── Constructors ──────────────────────────────────────────────────────────────
@@ -39,7 +41,7 @@ comparisons in the expression DSL:
 col("year") > lit(2020)
 ```
 """
-col(name::AbstractString)::LanceDBExpr    = LanceDBExpr(lancedb_expr_column(name))
+col(name::AbstractString)::LanceDBExpr    = LanceDBExpr(lancedb_expr_column(_check_string(name)))
 
 """
     lit(v) -> LanceDBExpr
@@ -53,7 +55,7 @@ lit(2021)        # integer literal
 lit(7.5f0)       # float literal (promoted to Float64)
 ```
 """
-lit(v::AbstractString)::LanceDBExpr       = LanceDBExpr(lancedb_expr_literal_string(v))
+lit(v::AbstractString)::LanceDBExpr       = LanceDBExpr(lancedb_expr_literal_string(_check_string(v)))
 lit(v::Integer)::LanceDBExpr              = LanceDBExpr(lancedb_expr_literal_i64(Int64(v)))
 lit(v::AbstractFloat)::LanceDBExpr        = LanceDBExpr(lancedb_expr_literal_f64(Float64(v)))
 lit(v::Bool)::LanceDBExpr                 = LanceDBExpr(lancedb_expr_literal_bool(v))
@@ -71,7 +73,27 @@ e1   = copy(base) & (col("rating") > lit(7.8f0))
 e2   = copy(base) & (col("rating") < lit(7.0f0))
 ```
 """
-Base.copy(e::LanceDBExpr)::LanceDBExpr    = LanceDBExpr(lancedb_expr_clone(e.handle))
+function Base.copy(e::LanceDBExpr)::LanceDBExpr
+    GC.@preserve e begin
+        _assert_live(e)
+        LanceDBExpr(lancedb_expr_clone(e.handle))
+    end
+end
+
+function _consume_all(expressions)
+    seen = IdDict{LanceDBExpr,Nothing}()
+    for e in expressions
+        _assert_live(e)
+        haskey(seen, e) && throw(ArgumentError("an expression cannot be consumed twice; use copy(expr)"))
+        seen[e] = nothing
+    end
+    handles = [e.handle for e in expressions]
+    for e in expressions
+        e._consumed = true
+        e.handle = C_NULL
+    end
+    handles
+end
 
 # ── Unary operators ───────────────────────────────────────────────────────────
 
@@ -102,7 +124,10 @@ isnotnull(e::LanceDBExpr)::LanceDBExpr    = LanceDBExpr(lancedb_expr_is_not_null
 # ── Binary operators ──────────────────────────────────────────────────────────
 
 function _binary(a::LanceDBExpr, op::BinaryOp, b::LanceDBExpr)::LanceDBExpr
-    LanceDBExpr(lancedb_expr_binary(_consume(a), Cint(op), _consume(b)))
+    GC.@preserve a b begin
+        handles = _consume_all((a, b))
+        LanceDBExpr(lancedb_expr_binary(handles[1], Cint(op), handles[2]))
+    end
 end
 
 Base.:(==)(a::LanceDBExpr, b::LanceDBExpr) = _binary(a, OpEq, b)
@@ -111,8 +136,8 @@ Base.:<(a::LanceDBExpr, b::LanceDBExpr)    = _binary(a, OpLt, b)
 Base.:<=(a::LanceDBExpr, b::LanceDBExpr)   = _binary(a, OpLtEq, b)
 Base.:>(a::LanceDBExpr, b::LanceDBExpr)    = _binary(a, OpGt, b)
 Base.:>=(a::LanceDBExpr, b::LanceDBExpr)   = _binary(a, OpGtEq, b)
-Base.:&(a::LanceDBExpr, b::LanceDBExpr)    = LanceDBExpr(lancedb_expr_and(_consume(a), _consume(b)))
-Base.:|(a::LanceDBExpr, b::LanceDBExpr)    = LanceDBExpr(lancedb_expr_or(_consume(a), _consume(b)))
+Base.:&(a::LanceDBExpr, b::LanceDBExpr)    = _binary(a, OpAnd, b)
+Base.:|(a::LanceDBExpr, b::LanceDBExpr)    = _binary(a, OpOr, b)
 Base.:+(a::LanceDBExpr, b::LanceDBExpr)    = _binary(a, OpPlus, b)
 Base.:-(a::LanceDBExpr, b::LanceDBExpr)    = _binary(a, OpMinus, b)
 Base.:*(a::LanceDBExpr, b::LanceDBExpr)    = _binary(a, OpMultiply, b)
@@ -129,15 +154,18 @@ Build an IN-list predicate. `expr` and all `values` are consumed.
     isin(col("label"), lit("cat"), lit("dog"))
 """
 function isin(expr::LanceDBExpr, values::LanceDBExpr...)::LanceDBExpr
-    isempty(values) && throw(ArgumentError("isin requires at least one value"))
-    handles = [_consume(v) for v in values]
-    list    = Ptr{Ptr{LanceDBExprHandle}}(pointer(handles))
-    errmsg  = Ref{Ptr{UInt8}}(C_NULL)
-    GC.@preserve handles begin
-        result = lancedb_expr_in_list(_consume(expr), list, Csize_t(length(handles)), false, errmsg)
+    GC.@preserve expr values begin
+        isempty(values) && throw(ArgumentError("isin requires at least one value"))
+        all_handles = _consume_all((expr, values...))
+        handles = all_handles[2:end]
+        list    = Ptr{Ptr{LanceDBExprHandle}}(pointer(handles))
+        errmsg  = Ref{Ptr{UInt8}}(C_NULL)
+        GC.@preserve handles begin
+            result = lancedb_expr_in_list(all_handles[1], list, Csize_t(length(handles)), false, errmsg)
+        end
+        result == C_NULL && check(Int32(LANCEDB_RUNTIME), errmsg)
+        LanceDBExpr(result)
     end
-    check_ptr(result, "lancedb_expr_in_list returned NULL")
-    LanceDBExpr(result)
 end
 
 """
@@ -146,13 +174,16 @@ end
 Build a NOT IN-list predicate. `expr` and all `values` are consumed.
 """
 function notiin(expr::LanceDBExpr, values::LanceDBExpr...)::LanceDBExpr
-    isempty(values) && throw(ArgumentError("notiin requires at least one value"))
-    handles = [_consume(v) for v in values]
-    list    = Ptr{Ptr{LanceDBExprHandle}}(pointer(handles))
-    errmsg  = Ref{Ptr{UInt8}}(C_NULL)
-    GC.@preserve handles begin
-        result = lancedb_expr_in_list(_consume(expr), list, Csize_t(length(handles)), true, errmsg)
+    GC.@preserve expr values begin
+        isempty(values) && throw(ArgumentError("notiin requires at least one value"))
+        all_handles = _consume_all((expr, values...))
+        handles = all_handles[2:end]
+        list    = Ptr{Ptr{LanceDBExprHandle}}(pointer(handles))
+        errmsg  = Ref{Ptr{UInt8}}(C_NULL)
+        GC.@preserve handles begin
+            result = lancedb_expr_in_list(all_handles[1], list, Csize_t(length(handles)), true, errmsg)
+        end
+        result == C_NULL && check(Int32(LANCEDB_RUNTIME), errmsg)
+        LanceDBExpr(result)
     end
-    check_ptr(result, "lancedb_expr_in_list returned NULL")
-    LanceDBExpr(result)
 end

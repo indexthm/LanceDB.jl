@@ -27,6 +27,7 @@ include("result.jl")      # QueryResult (Tables.jl interface)
 include("expr.jl")        # LanceDBExpr DSL (must precede query.jl)
 include("query.jl")       # Query, VectorQuery, execute — references LanceDBExpr
 include("index.jl")       # create_vector_index, create_scalar_index, etc.
+include("resources.jl")
 
 # ── Exports ───────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,7 @@ export uri, table_names, open_table, create_table, drop_table, reopen!
 
 # Table operations
 export count_rows, table_version, delete_rows, add, merge_insert, optimize
+export append_partitions!
 
 # Query building
 export query, vector_search, execute

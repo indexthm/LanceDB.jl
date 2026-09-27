@@ -95,7 +95,7 @@
     # ── 9. execute failure: builder consumed on the error path (bug #2) ───────
     # Block the target path by placing a regular file there. LanceDB will attempt
     # to create/open it as a directory and fail, so lancedb_connect_builder_execute
-    # returns NULL and the builder is consumed by Rust's Box::from_raw drop.
+    # returns an error code and the builder is consumed by Rust's Box::from_raw drop.
     #
     # NOTE: the Rust implementation drops the builder in BOTH the Ok and Err
     # branches (Box::from_raw takes ownership unconditionally). The C header says

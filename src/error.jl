@@ -17,8 +17,12 @@ Base.showerror(io::IO, e::LanceDBException) =
 function check(code::Cint, errmsg_ref::Ref{Ptr{UInt8}})
     code == Int32(LANCEDB_SUCCESS) && return
     ptr = errmsg_ref[]
-    msg = ptr != C_NULL ? unsafe_string(ptr) : "error code $code"
-    ptr != C_NULL && lancedb_free_string(ptr)
+    msg = try
+        ptr != C_NULL ? unsafe_string(ptr) : "error code $code"
+    finally
+        ptr != C_NULL && lancedb_free_string(ptr)
+        errmsg_ref[] = C_NULL
+    end
     throw(LanceDBException(code, msg))
 end
 

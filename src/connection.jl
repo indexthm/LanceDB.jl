@@ -4,44 +4,56 @@
 Manages a LanceDB connection. Freed automatically by the GC via finalizer;
 use the do-block form for deterministic cleanup.
 
-    Connection("./mydb") do conn
+    open(Connection, "./mydb") do conn
         ...
     end
 """
 mutable struct Connection
     handle::Ptr{LanceDBConnectionHandle}
     _uri::String
-    _storage_options  # nothing or iterable of (key => value) pairs
+    _storage_options::Union{Nothing,Vector{Pair{String,String}}}
     _session          # nothing or a Session object
 
     function Connection(uri::AbstractString; storage_options=nothing, session=nothing)
+        # Capture once: callers may mutate a dictionary or supply a one-shot iterator.
+        storage_options = storage_options === nothing ? nothing :
+            Pair{String,String}[String(k) => String(v) for (k,v) in storage_options]
         handle = _build_handle(uri, storage_options, session)
         conn   = new(handle, String(uri), storage_options, session)
-        finalizer(c -> c.handle != C_NULL && lancedb_connection_free(c.handle), conn)
+        finalizer(close, conn)
         conn
     end
 end
 
 function _build_handle(uri, storage_options, session)
+    _check_string(uri)
+    if storage_options !== nothing
+        foreach(kv -> (_check_string(first(kv)); _check_string(last(kv))), storage_options)
+    end
+    session === nothing || _assert_live(session)
     builder = lancedb_connect(uri)
     check_ptr(builder, "lancedb_connect returned NULL for uri: $uri")
 
-    if !isnothing(storage_options)
-        for (k, v) in storage_options
-            builder = lancedb_connect_builder_storage_option(builder, k, v)
-            check_ptr(builder, "lancedb_connect_builder_storage_option failed for key: $k")
+    try
+        if !isnothing(storage_options)
+            for (k, v) in storage_options
+                builder = lancedb_connect_builder_storage_option(builder, k, v)
+                check_ptr(builder, "lancedb_connect_builder_storage_option failed for key: $k")
+            end
         end
+        if !isnothing(session)
+            builder = GC.@preserve session lancedb_connect_builder_session(builder, session.handle)
+            check_ptr(builder, "lancedb_connect_builder_session returned NULL")
+        end
+        connection = Ref{Ptr{LanceDBConnectionHandle}}(C_NULL)
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        owned = builder
+        builder = C_NULL # execute consumes the builder, including on error
+        check(lancedb_connect_builder_execute(owned, connection, errmsg), errmsg)
+        check_ptr(connection[], "lancedb_connect_builder_execute returned NULL for uri: $uri")
+    finally
+        builder == C_NULL || lancedb_connect_builder_free(builder)
     end
-
-    if !isnothing(session)
-        builder = lancedb_connect_builder_session(builder, session.handle)
-        check_ptr(builder, "lancedb_connect_builder_session returned NULL")
-    end
-
-    connection = Ref{Ptr{LanceDBConnectionHandle}}(C_NULL)
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    check(lancedb_connect_builder_execute(builder, connection, errmsg), errmsg)
-    check_ptr(connection[], "lancedb_connect_builder_execute returned NULL for uri: $uri")
 end
 
 """
@@ -74,8 +86,9 @@ Release the native connection handle immediately. Safe to call more than once.
 """
 function Base.close(conn::Connection)
     conn.handle == C_NULL && return
-    lancedb_connection_free(conn.handle)
+    handle = conn.handle
     conn.handle = C_NULL
+    lancedb_connection_free(handle)
     nothing
 end
 
@@ -94,9 +107,11 @@ URI and options captured at construction time. Returns `conn` unchanged if it
 is already open.
 """
 function reopen!(conn::Connection)
-    Base.isopen(conn) && return conn
-    conn.handle = _build_handle(conn._uri, conn._storage_options, conn._session)
-    conn
+    GC.@preserve conn begin
+        Base.isopen(conn) && return conn
+        conn.handle = _build_handle(conn._uri, conn._storage_options, conn._session)
+        conn
+    end
 end
 
 """
@@ -112,17 +127,49 @@ uri(conn::Connection) = conn._uri
 
 List all table names in the database.
 """
-function table_names(conn::Connection)::Vector{String}
-    names_out = Ref{Ptr{Ptr{UInt8}}}(C_NULL)
-    count_out = Ref{Csize_t}(0)
-    errmsg    = Ref{Ptr{UInt8}}(C_NULL)
-    code = lancedb_connection_table_names(conn.handle, names_out, count_out, errmsg)
-    check(code, errmsg)
-    n   = count_out[]
-    ptr = names_out[]
-    result = [unsafe_string(unsafe_load(ptr, i)) for i in 1:n]
-    lancedb_free_table_names(ptr, n)
-    result
+function table_names(conn::Connection; limit::Union{Nothing,Integer}=nothing, start_after::Union{Nothing,AbstractString}=nothing)::Vector{String}
+    _assert_live(conn)
+    GC.@preserve conn begin
+        names_out = Ref{Ptr{Ptr{UInt8}}}(C_NULL)
+        count_out = Ref{Csize_t}(0)
+        errmsg    = Ref{Ptr{UInt8}}(C_NULL)
+        limit === nothing || _nonnegative(Cuint, limit)
+        start_after === nothing || _check_string(start_after)
+        code = if limit === nothing && start_after === nothing
+            lancedb_connection_table_names(conn.handle, names_out, count_out, errmsg)
+        else
+            builder = ccall((:lancedb_connection_table_names_builder, liblancedb), Ptr{Cvoid},
+                            (Ptr{LanceDBConnectionHandle},), conn.handle)
+            check_ptr(builder, "could not create table names builder")
+            try
+                if limit !== nothing
+                    builder = ccall((:lancedb_table_names_builder_limit, liblancedb), Ptr{Cvoid},
+                                    (Ptr{Cvoid}, Cuint), builder, limit)
+                    check_ptr(builder, "could not set table names limit")
+                end
+                if start_after !== nothing
+                    builder = ccall((:lancedb_table_names_builder_start_after, liblancedb), Ptr{Cvoid},
+                                    (Ptr{Cvoid}, Cstring), builder, start_after)
+                    check_ptr(builder, "could not set table names start_after")
+                end
+                owned = builder
+                builder = C_NULL
+                ccall((:lancedb_table_names_builder_execute, liblancedb), Cint,
+                    (Ptr{Cvoid}, Ref{Ptr{Ptr{UInt8}}}, Ref{Csize_t}, Ref{Ptr{UInt8}}),
+                    owned, names_out, count_out, errmsg)
+            finally
+                builder == C_NULL || ccall((:lancedb_table_names_builder_free, liblancedb), Cvoid, (Ptr{Cvoid},), builder)
+            end
+        end
+        check(code, errmsg)
+        n   = count_out[]
+        ptr = names_out[]
+        try
+            [unsafe_string(unsafe_load(ptr, i)) for i in 1:n]
+        finally
+            lancedb_free_table_names(ptr, n)
+        end
+    end
 end
 
 """
@@ -131,14 +178,18 @@ end
 Open an existing table. Throws `LanceDBException` if the table does not exist.
 """
 function open_table(conn::Connection, name::AbstractString)::Table
-    output = Ref{Ptr{LanceDBTableHandle}}(C_NULL)
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    check(lancedb_connection_open_table(conn.handle, name, output, errmsg), errmsg)
-    handle = output[]
-    check_ptr(handle, "table not found: $name")
-    tbl = Table(handle, String(name))
-    finalizer(t -> t.handle != C_NULL && lancedb_table_free(t.handle), tbl)
-    tbl
+    _assert_live(conn)
+    _check_string(name)
+    GC.@preserve conn begin
+        table_out = Ref{Ptr{LanceDBTableHandle}}(C_NULL)
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        check(lancedb_connection_open_table(conn.handle, name, table_out, errmsg), errmsg)
+        handle = table_out[]
+        check_ptr(handle, "table not found: $name")
+        tbl = Table(handle, String(name))
+        finalizer(close, tbl)
+        tbl
+    end
 end
 
 """
@@ -175,13 +226,17 @@ initial data; leave as `C_NULL` to create an empty table.
 function create_table(conn::Connection, name::AbstractString,
                       schema::Ptr{ArrowSchema};
                       reader::Ptr{LanceDBRecordBatchReaderHandle}=Ptr{LanceDBRecordBatchReaderHandle}(C_NULL))::Table
-    table_out = Ref{Ptr{LanceDBTableHandle}}(C_NULL)
-    errmsg    = Ref{Ptr{UInt8}}(C_NULL)
-    code = lancedb_table_create(conn.handle, name, Ptr{Cvoid}(schema), reader, table_out, errmsg)
-    check(code, errmsg)
-    tbl = Table(table_out[], String(name))
-    finalizer(t -> t.handle != C_NULL && lancedb_table_free(t.handle), tbl)
-    tbl
+    _assert_live(conn)
+    _check_string(name)
+    GC.@preserve conn begin
+        table_out = Ref{Ptr{LanceDBTableHandle}}(C_NULL)
+        errmsg    = Ref{Ptr{UInt8}}(C_NULL)
+        code = lancedb_table_create(conn.handle, name, Ptr{Cvoid}(schema), reader, table_out, errmsg)
+        check(code, errmsg)
+        tbl = Table(table_out[], String(name))
+        finalizer(close, tbl)
+        tbl
+    end
 end
 
 """
@@ -191,20 +246,25 @@ Create a table and populate it from any Tables.jl-compatible source.
 The schema is inferred from the data column types.
 """
 function create_table(conn::Connection, name::AbstractString, data)
-    Tables.istable(data) || throw(ArgumentError("data must satisfy the Tables.jl interface"))
-    reader, schema_ptr, arr_hdr, pins = _make_reader(data)
-    table_out = Ref{Ptr{LanceDBTableHandle}}(C_NULL)
-    errmsg    = Ref{Ptr{UInt8}}(C_NULL)
-    GC.@preserve pins begin
-        code = lancedb_table_create(conn.handle, name, Ptr{Cvoid}(schema_ptr),
-                                    reader, table_out, errmsg)
+    _assert_live(conn)
+    _check_string(name)
+    GC.@preserve conn begin
+        Tables.istable(data) || throw(ArgumentError("data must satisfy the Tables.jl interface"))
+        reader, schema_ptr, arr_hdr, pins = _make_reader(data)
+        table_out = Ref{Ptr{LanceDBTableHandle}}(C_NULL)
+        errmsg    = Ref{Ptr{UInt8}}(C_NULL)
+        code = try
+            GC.@preserve conn pins lancedb_table_create(conn.handle, name, Ptr{Cvoid}(schema_ptr),
+                                                       reader, table_out, errmsg)
+        finally
+            _free_array_tree(arr_hdr)
+            release_arrow_schema(schema_ptr)
+        end
+        check(code, errmsg)
+        tbl = Table(table_out[], String(name))
+        finalizer(close, tbl)
+        tbl
     end
-    _free_array_tree(arr_hdr)
-    release_arrow_schema(schema_ptr)
-    check(code, errmsg)
-    tbl = Table(table_out[], String(name))
-    finalizer(t -> t.handle != C_NULL && lancedb_table_free(t.handle), tbl)
-    tbl
 end
 
 """
@@ -213,7 +273,11 @@ end
 Drop a table. Throws `LanceDBException` on failure.
 """
 function drop_table(conn::Connection, name::AbstractString)
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    code   = lancedb_connection_drop_table(conn.handle, name, Ptr{UInt8}(C_NULL), errmsg)
-    check(code, errmsg)
+    _assert_live(conn)
+    _check_string(name)
+    GC.@preserve conn begin
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        code   = lancedb_connection_drop_table(conn.handle, name, Ptr{UInt8}(C_NULL), errmsg)
+        check(code, errmsg)
+    end
 end

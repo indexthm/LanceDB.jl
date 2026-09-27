@@ -13,10 +13,11 @@ mutable struct Query
     _consumed::Bool
 
     function Query(tbl::Table)
-        handle = lancedb_query_new(tbl.handle)
+        _assert_live(tbl)
+        handle = GC.@preserve tbl lancedb_query_new(tbl.handle)
         check_ptr(handle, "lancedb_query_new returned NULL")
         q = new(handle, false)
-        finalizer(q -> q._consumed || lancedb_query_free(q.handle), q)
+        finalizer(close, q)
         q
     end
 end
@@ -52,7 +53,7 @@ query(tbl) |> limit(10) |> execute
 function limit(q::Query, n::Integer)::Query
     _assert_live(q)
     errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    check(lancedb_query_limit(q.handle, Csize_t(n), errmsg), errmsg)
+    GC.@preserve q check(lancedb_query_limit(q.handle, _nonnegative(Csize_t, n), errmsg), errmsg)
     q
 end
 
@@ -69,10 +70,12 @@ query(tbl) |> offset(20) |> limit(10) |> execute
 ```
 """
 function offset(q::Query, n::Integer)::Query
-    _assert_live(q)
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    check(lancedb_query_offset(q.handle, Csize_t(n), errmsg), errmsg)
-    q
+    GC.@preserve q begin
+        _assert_live(q)
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        check(lancedb_query_offset(q.handle, _nonnegative(Csize_t, n), errmsg), errmsg)
+        q
+    end
 end
 
 offset(n::Integer) = q -> offset(q, n)
@@ -90,14 +93,17 @@ query(tbl) |> select_cols(["id", "title"]) |> execute
 ```
 """
 function select_cols(q::Query, cols::Vector{String})::Query
-    _assert_live(q)
-    ptrs   = [pointer(c) for c in cols]
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    GC.@preserve cols begin
-        code = lancedb_query_select(q.handle, pointer(ptrs), Csize_t(length(cols)), errmsg)
+    GC.@preserve q begin
+        _assert_live(q)
+        foreach(_check_string, cols)
+        ptrs   = [pointer(c) for c in cols]
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        GC.@preserve cols ptrs begin
+            code = lancedb_query_select(q.handle, pointer(ptrs), Csize_t(length(cols)), errmsg)
+        end
+        check(code, errmsg)
+        q
     end
-    check(code, errmsg)
-    q
 end
 
 select_cols(cols::Vector{String}) = q -> select_cols(q, cols)
@@ -109,10 +115,13 @@ Set a SQL WHERE predicate. If a DataFusion expression is also set it takes
 precedence (see `filter_expr`).
 """
 function filter_where(q::Query, predicate::AbstractString)::Query
-    _assert_live(q)
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    check(lancedb_query_where_filter(q.handle, predicate, errmsg), errmsg)
-    q
+    _check_string(predicate)
+    GC.@preserve q begin
+        _assert_live(q)
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        check(lancedb_query_where_filter(q.handle, predicate, errmsg), errmsg)
+        q
+    end
 end
 
 filter_where(predicate::AbstractString) = q -> filter_where(q, predicate)
@@ -123,12 +132,16 @@ filter_where(predicate::AbstractString) = q -> filter_where(q, predicate)
 Set a DataFusion `LanceDBExpr` filter. The expr handle is consumed.
 """
 function filter_expr(q::Query, expr::LanceDBExpr)::Query
-    _assert_live(q)
-    expr._consumed && throw(LanceDBException(Int32(LANCEDB_RUNTIME), "LanceDBExpr already consumed"))
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    check(lancedb_query_df_filter(q.handle, expr.handle, errmsg), errmsg)
-    expr._consumed = true
-    q
+    GC.@preserve q expr begin
+        _assert_live(q)
+        expr._consumed && throw(LanceDBException(Int32(LANCEDB_RUNTIME), "LanceDBExpr already consumed"))
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        code = lancedb_query_df_filter(q.handle, expr.handle, errmsg)
+        expr._consumed = true
+        expr.handle = C_NULL
+        check(code, errmsg)
+        q
+    end
 end
 
 filter_expr(expr::LanceDBExpr) = q -> filter_expr(q, expr)
@@ -139,13 +152,16 @@ filter_expr(expr::LanceDBExpr) = q -> filter_expr(q, expr)
 Run the query. Consumes the query handle.
 """
 function execute(q::Query)::QueryResult
-    _assert_live(q)
-    result = lancedb_query_execute(q.handle)
-    q._consumed = true
-    check_ptr(result, "lancedb_query_execute returned NULL")
-    qr = QueryResult(result)
-    finalizer(r -> r.handle != C_NULL && lancedb_query_result_free(r.handle), qr)
-    qr
+    GC.@preserve q begin
+        _assert_live(q)
+        result = lancedb_query_execute(q.handle)
+        q._consumed = true
+        q.handle = C_NULL
+        check_ptr(result, "lancedb_query_execute returned NULL")
+        qr = QueryResult(result)
+        finalizer(close, qr)
+        qr
+    end
 end
 
 # ── VectorQuery ───────────────────────────────────────────────────────────────
@@ -166,12 +182,15 @@ mutable struct VectorQuery
     _consumed::Bool
 
     function VectorQuery(tbl::Table, vec::Vector{Float32}, column::Union{String,Nothing}=nothing)
-        GC.@preserve vec begin
+        _assert_live(tbl)
+        column === nothing || _check_string(column)
+        isempty(vec) && throw(ArgumentError("query vector cannot be empty"))
+        GC.@preserve tbl vec begin
             handle = lancedb_vector_query_new(tbl.handle, pointer(vec), Csize_t(length(vec)))
         end
         check_ptr(handle, "lancedb_vector_query_new returned NULL")
         vq = new(handle, false)
-        finalizer(vq -> vq._consumed || lancedb_vector_query_free(vq.handle), vq)
+        finalizer(close, vq)
         if !isnothing(column)
             errmsg = Ref{Ptr{UInt8}}(C_NULL)
             check(lancedb_vector_query_column(vq.handle, column, errmsg), errmsg)
@@ -214,10 +233,12 @@ Return at most `n` nearest neighbours. The single-argument curried form
 also works: `vector_search(tbl, vec, "col") |> limit(10) |> execute`.
 """
 function limit(vq::VectorQuery, n::Integer)::VectorQuery
-    _assert_live(vq)
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    check(lancedb_vector_query_limit(vq.handle, Csize_t(n), errmsg), errmsg)
-    vq
+    GC.@preserve vq begin
+        _assert_live(vq)
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        check(lancedb_vector_query_limit(vq.handle, _nonnegative(Csize_t, n), errmsg), errmsg)
+        vq
+    end
 end
 
 """
@@ -228,10 +249,12 @@ Set the distance metric for the search. Defaults to `L2`. Available values:
 `L2`, `Cosine`, `Dot`, `Hamming`. The single-argument form is curried for `|>`.
 """
 function distance_type(vq::VectorQuery, dt::DistanceType)::VectorQuery
-    _assert_live(vq)
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    check(lancedb_vector_query_distance_type(vq.handle, Cint(dt), errmsg), errmsg)
-    vq
+    GC.@preserve vq begin
+        _assert_live(vq)
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        check(lancedb_vector_query_distance_type(vq.handle, Cint(dt), errmsg), errmsg)
+        vq
+    end
 end
 
 distance_type(dt::DistanceType) = vq -> distance_type(vq, dt)
@@ -246,10 +269,12 @@ IVF-based vector index exists; ignored for flat (un-indexed) search.
 The single-argument form is curried for `|>`.
 """
 function nprobes(vq::VectorQuery, n::Integer)::VectorQuery
-    _assert_live(vq)
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    check(lancedb_vector_query_nprobes(vq.handle, Csize_t(n), errmsg), errmsg)
-    vq
+    GC.@preserve vq begin
+        _assert_live(vq)
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        check(lancedb_vector_query_nprobes(vq.handle, _nonnegative(Csize_t, n), errmsg), errmsg)
+        vq
+    end
 end
 
 nprobes(n::Integer) = vq -> nprobes(vq, n)
@@ -264,10 +289,12 @@ I/O. A value of `1` (the default) disables re-ranking. The single-argument
 form is curried for `|>`.
 """
 function refine_factor(vq::VectorQuery, k::Integer)::VectorQuery
-    _assert_live(vq)
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    check(lancedb_vector_query_refine_factor(vq.handle, Cuint(k), errmsg), errmsg)
-    vq
+    GC.@preserve vq begin
+        _assert_live(vq)
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        check(lancedb_vector_query_refine_factor(vq.handle, _nonnegative(Cuint, k), errmsg), errmsg)
+        vq
+    end
 end
 
 refine_factor(k::Integer) = vq -> refine_factor(vq, k)
@@ -281,10 +308,12 @@ Higher values improve recall; lower values are faster. Only relevant when
 an HNSW-based index is in use. The single-argument form is curried for `|>`.
 """
 function ef(vq::VectorQuery, n::Integer)::VectorQuery
-    _assert_live(vq)
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    check(lancedb_vector_query_ef(vq.handle, Csize_t(n), errmsg), errmsg)
-    vq
+    GC.@preserve vq begin
+        _assert_live(vq)
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        check(lancedb_vector_query_ef(vq.handle, _nonnegative(Csize_t, n), errmsg), errmsg)
+        vq
+    end
 end
 
 ef(n::Integer) = vq -> ef(vq, n)
@@ -296,10 +325,13 @@ Apply a SQL WHERE predicate to the vector search results. Only rows
 matching `predicate` are returned even if they would rank in the top-k.
 """
 function filter_where(vq::VectorQuery, predicate::AbstractString)::VectorQuery
-    _assert_live(vq)
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    check(lancedb_vector_query_where_filter(vq.handle, predicate, errmsg), errmsg)
-    vq
+    _check_string(predicate)
+    GC.@preserve vq begin
+        _assert_live(vq)
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        check(lancedb_vector_query_where_filter(vq.handle, predicate, errmsg), errmsg)
+        vq
+    end
 end
 
 """
@@ -310,12 +342,16 @@ The expression handle is consumed. See also the curried form from `Query`:
 `filter_expr(expr)` works with `|>` on both `Query` and `VectorQuery`.
 """
 function filter_expr(vq::VectorQuery, expr::LanceDBExpr)::VectorQuery
-    _assert_live(vq)
-    expr._consumed && throw(LanceDBException(Int32(LANCEDB_RUNTIME), "LanceDBExpr already consumed"))
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    check(lancedb_vector_query_df_filter(vq.handle, expr.handle, errmsg), errmsg)
-    expr._consumed = true
-    vq
+    GC.@preserve vq expr begin
+        _assert_live(vq)
+        expr._consumed && throw(LanceDBException(Int32(LANCEDB_RUNTIME), "LanceDBExpr already consumed"))
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        code = lancedb_vector_query_df_filter(vq.handle, expr.handle, errmsg)
+        expr._consumed = true
+        expr.handle = C_NULL
+        check(code, errmsg)
+        vq
+    end
 end
 
 """
@@ -326,14 +362,17 @@ included even if not listed. The curried `select_cols(cols)` form works
 with `|>` on both `Query` and `VectorQuery`.
 """
 function select_cols(vq::VectorQuery, cols::Vector{String})::VectorQuery
-    _assert_live(vq)
-    ptrs   = [pointer(c) for c in cols]
-    errmsg = Ref{Ptr{UInt8}}(C_NULL)
-    GC.@preserve cols begin
-        code = lancedb_vector_query_select(vq.handle, pointer(ptrs), Csize_t(length(cols)), errmsg)
+    GC.@preserve vq begin
+        _assert_live(vq)
+        foreach(_check_string, cols)
+        ptrs   = [pointer(c) for c in cols]
+        errmsg = Ref{Ptr{UInt8}}(C_NULL)
+        GC.@preserve cols ptrs begin
+            code = lancedb_vector_query_select(vq.handle, pointer(ptrs), Csize_t(length(cols)), errmsg)
+        end
+        check(code, errmsg)
+        vq
     end
-    check(code, errmsg)
-    vq
 end
 
 """
@@ -343,11 +382,14 @@ Run the vector search and materialise the result. Consumes the query;
 calling `execute` again on the same object will throw `LanceDBException`.
 """
 function execute(vq::VectorQuery)::QueryResult
-    _assert_live(vq)
-    result = lancedb_vector_query_execute(vq.handle)
-    vq._consumed = true
-    check_ptr(result, "lancedb_vector_query_execute returned NULL")
-    qr = QueryResult(result)
-    finalizer(r -> r.handle != C_NULL && lancedb_query_result_free(r.handle), qr)
-    qr
+    GC.@preserve vq begin
+        _assert_live(vq)
+        result = lancedb_vector_query_execute(vq.handle)
+        vq._consumed = true
+        vq.handle = C_NULL
+        check_ptr(result, "lancedb_vector_query_execute returned NULL")
+        qr = QueryResult(result)
+        finalizer(close, qr)
+        qr
+    end
 end
