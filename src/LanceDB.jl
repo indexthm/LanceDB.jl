@@ -3,6 +3,7 @@ module LanceDB
 using Arrow
 using Tables
 using Dates
+using Random
 import LanceDB_C_jll
 
 # ── Library path ──────────────────────────────────────────────────────────────
@@ -32,11 +33,13 @@ include("index.jl")       # create_vector_index, create_scalar_index, etc.
 include("resources.jl")
 include("management.jl")
 include("expressions_extra.jl")
+include("dataset.jl")
 
 # ── Exports ───────────────────────────────────────────────────────────────────
 
 # Types
 export BinaryColumn, ListColumn
+export IDDataset, take_ids, batches, sample_rows
 export Connection, Table, TableSink, Query, VectorQuery, QueryResult, LanceDBExpr
 export LanceDBException
 
