@@ -30,4 +30,5 @@ using Tables
     include("test_integration.jl")
     include("test_arrow_extension.jl")
     include("test_dataframes.jl")
+    include("test_csv_extension.jl")
 end

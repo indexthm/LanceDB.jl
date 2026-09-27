@@ -135,6 +135,33 @@ See the upstream [storage guide](https://docs.lancedb.com/storage) and [Lance Bl
 
 ## Optional integrations
 
+### CSV files
+
+Install CSV.jl in your application with `Pkg.add("CSV")`. Loading it enables
+`import_csv` for creating or appending to a table. CSV parsing options such as
+`delim`, `types` and `missingstring` can be passed directly.
+
+```@example csv
+using LanceDB, CSV, DataFrames
+
+mktempdir() do path
+    open(Connection, path) do db
+        input = IOBuffer("id,text,score\n1,cat,0.8\n2,dog,0.9\n")
+        table = import_csv(db, "items", input)
+        try
+            import_csv(table, IOBuffer("id,text,score\n3,bird,0.7\n"))
+            println(DataFrame(take_ids(table, [1, 3])))
+        finally
+            close(table)
+        end
+    end
+end
+```
+
+Pass a file path, such as `import_csv(db, "items", "items.csv")`, to read from disk. Invalid values in explicitly typed columns raise an error by default; `strict=false` selects CSV.jl's more permissive behavior. Ordinary imports parse the input before writing. For larger files, use `append_partitions!(table, CSV.Chunks("items.csv"; types=...))` with consistent column types; each chunk is committed separately.
+
+### Arrow and DataFrames
+
 Arrow is a weak dependency. Install it in your application and load both packages to enable `LanceDBArrowExt` automatically:
 
 ```julia

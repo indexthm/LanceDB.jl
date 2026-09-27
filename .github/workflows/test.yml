@@ -28,5 +28,6 @@ jobs:
           Pkg.instantiate()
           using LanceDB
           @assert Base.get_extension(LanceDB, :LanceDBArrowExt) === nothing
+          @assert Base.get_extension(LanceDB, :LanceDBCSVExt) === nothing
       - name: Test package and optional integration
         run: julia --color=yes --project=. -e 'using Pkg; Pkg.test()'
