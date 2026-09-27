@@ -1,4 +1,4 @@
-@testset "Vector search execute (M6)" begin
+@testset "Vector search execute" begin
     tmp = mktempdir()
 
     # Canonical 4-D unit-basis test data
@@ -177,22 +177,7 @@
         close(tbl); close(conn)
     end
 
-    # ── 11. Regression: VectorQuery finalizer registered too late (bug #1) ───
-    #
-    # The VectorQuery inner constructor allocates a C handle, wraps it in `vq`,
-    # then calls lancedb_vector_query_column — and only registers the finalizer
-    # AFTER that call returns. If the call throws, the finalizer is never
-    # registered and the handle leaks.
-    #
-    # Code path (query.jl):
-    #   handle = lancedb_vector_query_new(...)       ← C handle allocated
-    #   vq     = new(handle, false)                  ← wrapped, no finalizer yet
-    #   check(lancedb_vector_query_column(...))       ← throws here  ← BUG
-    #   finalizer(vq -> ..., vq)                     ← never reached
-    #
-    # Trigger: 0xFF is not a valid UTF-8 start byte. Rust's CStr::to_str()
-    # returns Err, so lancedb_vector_query_column returns LANCEDB_INVALID_ARGUMENT.
-    @testset "VectorQuery handle leaks when column call throws (bug #1)" begin
+    @testset "Invalid column leaves table usable" begin
         conn = Connection(joinpath(tmp, "vq-finalizer"))
         tbl  = create_table(conn, "t", (id=ids, vec=vecs))
         qvec = Float32[1.0, 0.0, 0.0, 0.0]
@@ -201,13 +186,8 @@
 
         @test_throws LanceDBException vector_search(tbl, qvec, bad_col)
 
-        # Force two full GC cycles.
-        # Bug present:  no finalizer was registered → handle NOT freed here.
-        # Bug fixed:    finalizer registered before column call → handle freed here.
         GC.gc(); GC.gc()
 
-        # The table and connection must still be usable — the leaked VectorQuery
-        # handle is independent of both, so subsequent queries must succeed.
         cols = Tables.columns(vector_search(tbl, qvec, "vec") |> limit(1) |> execute)
         @test length(cols[:id]) == 1
 

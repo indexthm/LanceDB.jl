@@ -1,5 +1,5 @@
-@testset "Index management (M7)" begin
-    tmp = mktempdir()
+@testset "Index management" begin
+    tmp = only(ARGS)
 
     # ── Scalar index (BTree) ──────────────────────────────────────────────────
     @testset "create and drop scalar index" begin

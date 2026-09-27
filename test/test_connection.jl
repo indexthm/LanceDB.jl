@@ -92,7 +92,7 @@
         @test sprint(showerror, e) == "LanceDBException(4): table not found"
     end
 
-    # ── 9. execute failure: builder consumed on the error path (bug #2) ───────
+    # ── 9. execute failure: builder consumed on the error path ───────
     # Block the target path by placing a regular file there. LanceDB will attempt
     # to create/open it as a directory and fail, so lancedb_connect_builder_execute
     # returns an error code and the builder is consumed by Rust's Box::from_raw drop.

@@ -1,4 +1,3 @@
-# Query / Expression DSL tests (M5 / M8 work)
 @testset "Query" begin
     # ── Expression DSL ────────────────────────────────────────────────────────
     @testset "LanceDBExpr constructors" begin
@@ -46,9 +45,4 @@
         @test original._consumed == false
     end
 
-    @testset "Query and VectorQuery are accessible" begin
-        @test LanceDB.Query <: Any
-        @test LanceDB.VectorQuery <: Any
-        @test LanceDB.QueryResult <: Any
-    end
 end

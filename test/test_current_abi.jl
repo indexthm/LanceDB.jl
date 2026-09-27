@@ -36,3 +36,44 @@
         end
     end
 end
+@testset "Table" begin
+    @test LanceDBVectorIndexConfig() isa LanceDBVectorIndexConfig
+    @test LanceDBScalarIndexConfig() isa LanceDBScalarIndexConfig
+    @test LanceDBFtsIndexConfig() isa LanceDBFtsIndexConfig
+    @test LanceDBMergeInsertConfig() isa LanceDBMergeInsertConfig
+
+    # Verify default config values from the spec
+    cfg = LanceDBVectorIndexConfig()
+    @test cfg.num_partitions  == -1
+    @test cfg.num_sub_vectors == -1
+    @test cfg.distance_type   == Int32(L2)
+end
+
+@testset "VectorSearch" begin
+    @testset "DistanceType enum" begin
+        @test L2     == DistanceType(0)
+        @test Cosine == DistanceType(1)
+        @test Dot    == DistanceType(2)
+        @test Hamming == DistanceType(3)
+    end
+
+    @testset "IndexType enum" begin
+        @test Auto      == IndexType(0)
+        @test BTree     == IndexType(1)
+        @test IVFFlat   == IndexType(5)
+        @test IVFHNSWsq == IndexType(8)
+    end
+
+    @testset "make_vector_schema" begin
+        schema = make_vector_schema("key", "data", 8)
+        @test schema != C_NULL
+        release_arrow_schema(schema)
+    end
+
+    @testset "make_schema" begin
+        schema = make_schema(["id" => "l", "text" => "u"])
+        @test schema != C_NULL
+        release_arrow_schema(schema)
+    end
+end
+

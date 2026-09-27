@@ -1,4 +1,4 @@
-@testset "Query execute (M5)" begin
+@testset "Query execute" begin
     tmp = mktempdir()
 
     # ── 1. full-table scan returns all rows ───────────────────────────────────

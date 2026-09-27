@@ -1,4 +1,4 @@
-@testset "Expression DSL filter (M8)" begin
+@testset "Expression DSL filter" begin
     tmp = mktempdir()
 
     # Shared table for all expression tests

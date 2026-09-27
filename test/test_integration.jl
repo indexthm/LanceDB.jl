@@ -1,6 +1,6 @@
 _normalize(v::Vector{Float32}) = v ./ max(sqrt(sum(v.^2)), 1f-9)
 
-@testset "Integration (M9)" begin
+@testset "Integration" begin
     tmp = mktempdir()
 
     # ── 1. Data persists across connection close/reopen ───────────────────────

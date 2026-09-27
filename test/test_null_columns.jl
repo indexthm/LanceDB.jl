@@ -1,4 +1,4 @@
-# Unit tests for null-bitmap reading in _read_column (bug #4).
+# Unit tests for null-bitmap reading in _read_column.
 #
 # Arrow validity bitmap encoding:
 #   bit i (0-indexed) == 1 → slot i is valid
@@ -8,7 +8,7 @@
 # We construct mock ArrowArray structs on the Julia heap and call LanceDB._read_column
 # directly, so no C library is required.
 
-@testset "null bitmap reading in _read_column (bug #4)" begin
+@testset "null bitmap reading in _read_column" begin
 
     # ── 1. Primitive numeric column ─────────────────────────────────────────────
 

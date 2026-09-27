@@ -1,4 +1,4 @@
-@testset "Table add (M4)" begin
+@testset "Table add" begin
     tmp = mktempdir()
 
     # ── 1. add rows to empty table, verify count ──────────────────────────────
