@@ -1,143 +1,91 @@
 # LanceDB.jl
 
-> **Work in progress — experimental.** The API is unstable and subject to
-> breaking changes without notice. Not yet registered in the Julia General
-> registry. Use at your own risk.
+Julia bindings for [LanceDB](https://lancedb.com/), using the published `LanceDB_C_jll` and the lancedb-c 0.33 C ABI. Tables.jl connects ingestion and query results to the Julia data ecosystem. The API is experimental.
 
-A pure Julia wrapper for [LanceDB](https://lancedb.com/) built on top of the official [lancedb-c](https://github.com/lancedb/lancedb-c) C FFI layer. It exposes a Tables.jl-compatible interface so query results work directly with DataFrames.jl, CSV.jl, and the rest of the Julia data ecosystem.
-
----
+[Documentation](https://indexthm.github.io/LanceDB.jl/dev/) · [User guide](docs/src/guide.md) · [Capabilities and limits](docs/src/capabilities.md)
 
 ## Getting started
 
-See **[QUICKSTART.md](https://github.com/asbisen/LanceDB.jl/blob/main/QUICKSTART.md)** for a step-by-step walkthrough you can follow from the Julia REPL by copy-pasting each block in sequence.
+Julia 1.10 or later is required. No Rust compiler or Python installation is needed. Install this fork in your Julia environment:
 
----
-
-## Prerequisites
-
-### 1. Rust toolchain
-
-The C library is written in Rust. Install `rustup` if you don't have it:
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-Ensure the stable toolchain is active:
-
-```bash
-rustup default stable
-```
-
-### 2. CMake ≥ 3.20
-
-| Platform | Install |
-|---|---|
-| macOS | `brew install cmake` |
-| Ubuntu/Debian | `sudo apt install cmake` |
-
-### 3. Julia ≥ 1.10
-
-Download from [julialang.org](https://julialang.org/downloads/).
-
----
-
-## Building the shared library
-
-The Julia package loads `liblancedb.so` (Linux) or `liblancedb.dylib`
-(macOS) at startup. You must build it from source before using the package.
-
-### Clone lancedb-c
-
-```bash
-git clone https://github.com/lancedb/lancedb-c.git
-```
-
-### Build (Linux)
-
-```bash
-cd lancedb-c/build
-cmake ..
-make -j$(nproc)
-```
-
-The shared library is produced at:
-
-```
-lancedb-c/build/target/release/liblancedb.so
-```
-
-### Build (macOS)
-
-```bash
-cd lancedb-c/build
-cmake ..
-make -j$(sysctl -n hw.logicalcpu)
-```
-
-The shared library is produced at:
-
-```
-lancedb-c/build/target/release/liblancedb.dylib
-```
-
----
-
-## Running the Julia package
-
-Clone this repository alongside the `lancedb-c` directory so they share the same parent folder (the default library path is relative):
-
-```
-parent/
-├── lancedb-c/          ← cloned above
-│   └── build/target/release/liblancedb.so
-└── julia-lance/        ← this repository
-    └── LanceDB.jl/
-```
-
-Start Julia in the package directory:
-
-```bash
-cd julia-lance/LanceDB.jl
-julia --project=.
+```julia
+using Pkg
+Pkg.add(url="https://github.com/indexthm/LanceDB.jl")
+Pkg.add("Tables")
 ```
 
 ```julia
-using LanceDB
-using Tables
+using LanceDB, Tables
 
-conn = Connection("/tmp/my_lancedb")
-println(table_names(conn))   # []
+open(Connection, "./my-database") do db
+    table = create_table(db, "items", (
+        id = [1, 2],
+        text = ["cat", "dog"],
+        embedding = [Float32[1, 0], Float32[0, 1]],
+    ))
+    try
+        result = vector_search(table, [1.0, 0.0], :embedding) |> limit(1) |> execute
+        try
+            println(Tables.columns(result))
+        finally
+            close(result)
+        end
+    finally
+        close(table)
+    end
+end
 ```
 
-If `liblancedb` lives somewhere else, set the environment variable before loading the package:
+Run the example in a fresh database, or use `open_table` for an existing table. The [multimodal guide](docs/src/multimodal.md) covers binary media, indexed ID lookup, shuffled batches and user-supplied embedding models.
 
-```bash
-LANCEDB_LIB=/path/to/liblancedb.so julia --project=.
+## Optional integrations
+
+Loading Arrow.jl enables the Arrow extension: supported `Arrow.Table` columns retain their binary/list layouts, and eligible primitive buffers are borrowed during ingestion. Arrow is not required for ordinary Tables.jl sources. DataFrames and SubDataFrames work through Tables.jl without a package-specific extension. See [the guide](docs/src/guide.md#Optional-integrations) for examples and limitations.
+
+## Development
+
+From a checkout, run:
+
+```sh
+julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
+julia --project=. benchmark/run.jl
 ```
 
-### Run the tests
+The benchmark reports Julia allocations and warmed timings; it excludes native Rust allocations.
 
-```bash
-julia --project=. test/runtests.jl
+### Conversion benchmark
+
+On Windows with Julia 1.13.0, Arrow 2.8.1 and LanceDB_C_jll 0.33.0+0, removing the unused Arrow import left conversion allocations effectively unchanged. Numeric input used 720 bytes before and after; string and vector input used about 221 KB and 321 KB. The conversion implementation was unchanged. Short timings varied between runs and did not establish a regression.
+
+For a 20,000-row `Arrow.Table` with Int64 and Float64 columns, the optional extension produced:
+
+| Julia-to-C conversion | Without extension | With extension |
+|---|---:|---:|
+| Julia allocation | 321,534 bytes | 2,064 bytes |
+| Median time (31 warmed samples) | 0.0947 ms | 0.0361 ms |
+
+Run `benchmark/run.jl --arrow` from an environment containing both LanceDB and Arrow to reproduce the input conversion measurement. These numbers exclude IPC parsing and native ingestion; they are not end-to-end database throughput or a Python comparison.
+
+Build the documentation from the repository root:
+
+```sh
+julia --project=docs -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+julia --project=docs docs/make.jl
 ```
 
----
+Documenter writes HTML to `docs/build/`. GitHub Actions builds the same documentation and deploys it to this fork's GitHub Pages. Generated HTML and all `Manifest.toml` files are ignored by Git.
 
-## Repository layout
+### Updating the C bindings
 
-```
-lancedb-c/          C FFI library (build this first)
-lancedb-rs/         Exploratory Rust examples
-LanceDB.jl/         Julia package
-  src/              Package source
-  test/             Test suite
-  QUICKSTART.md     End-to-end usage guide
+The bindings are maintained by hand. The separate `gen/` environment uses Clang only for maintenance; it is not a runtime, test or documentation dependency. Generate reference output from the JLL artifact's header with:
+
+```sh
+julia --project=gen -e 'using Pkg; Pkg.instantiate()'
+julia --project=gen gen/generator.jl
 ```
 
----
+Compare `gen/bindings.generated.jl` with `src/api.jl`, `src/ctypes.jl` and high-level native calls. Check upstream ownership and error behavior before changing the wrappers. The generator does not overwrite source files. Arrow C ABI layouts in `src/arrow_abi.jl` are maintained manually.
 
 ## License
 
-See [lancedb-c/LICENSE](lancedb-c/LICENSE) for the upstream C library. The Julia wrapper in `LanceDB.jl/` is released under the Apache 2.0 License.
+[Apache 2.0](LICENSE). The native library's license is included in its JLL artifact.
