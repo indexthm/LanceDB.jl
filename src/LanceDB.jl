@@ -5,16 +5,8 @@ using Dates
 using Random
 import LanceDB_C_jll
 
-# ── Library path ──────────────────────────────────────────────────────────────
-# Override by setting LANCEDB_LIB environment variable before loading the module.
-const liblancedb = let
-    from_env = get(ENV, "LANCEDB_LIB", "")
-    if !isempty(from_env)
-        from_env
-    else
-        LanceDB_C_jll.liblancedb
-    end
-end
+# Use the JLL product; environment variables read at precompile time can become stale.
+const liblancedb = LanceDB_C_jll.liblancedb
 
 # ── Source includes (order matters) ──────────────────────────────────────────
 include("ctypes.jl")      # primitive handle types, enums, C value-type structs
