@@ -140,8 +140,10 @@ end
 """
     list_versions(table)
 
-Return a vector of named tuples (a Tables.jl row table). Timestamps retain
-the native UTC Unix seconds and subsecond nanoseconds without rounding.
+Return a vector of named tuples (a Tables.jl row table), ordered by version.
+`timestamp` is a UTC `DateTime` truncated to milliseconds for display.
+`timestamp_seconds` and `timestamp_nanos` retain the exact native timestamp.
+Listing history does not switch the table to an earlier version.
 """
 function list_versions(tbl::Table)
     _assert_live(tbl)
@@ -152,11 +154,13 @@ function list_versions(tbl::Table)
         (Ptr{LanceDBTableHandle}, Ref{Ptr{LanceDBVersion}}, Ref{Ptr{LanceDBVersionMetadata}}, Ref{Csize_t}, Ref{Ptr{UInt8}}),
         tbl.handle, versions, metadata, n, err), err)
     try
-        map(1:Int(n[])) do i
+        history = map(1:Int(n[])) do i
             v, m = unsafe_load(versions[], i), unsafe_load(metadata[], i)
-            (; version=v.version, timestamp_seconds=v.timestamp_seconds,
+            timestamp = DateTime(1970) + Second(v.timestamp_seconds) + Millisecond(v.timestamp_nanos ÷ 1_000_000)
+            (; version=v.version, timestamp, timestamp_seconds=v.timestamp_seconds,
                timestamp_nanos=v.timestamp_nanos, metadata=_string_dict(m.keys, m.values, m.count))
         end
+        sort!(history; by=v -> v.version)
     finally
         ccall((:lancedb_free_versions, liblancedb), Cvoid, (Ptr{LanceDBVersion}, Csize_t), versions[], n[])
         ccall((:lancedb_free_version_metadata, liblancedb), Cvoid, (Ptr{LanceDBVersionMetadata}, Csize_t), metadata[], n[])

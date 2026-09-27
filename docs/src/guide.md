@@ -101,13 +101,32 @@ These operations build and maintain native FTS indexes. Full-text queries, relev
 
 ## Metadata and versions
 
-```julia
-set_metadata!(table, Dict("source" => "training-set"))
-metadata = get_metadata(table)
-history = list_versions(table)
+```@example versions
+using LanceDB, DataFrames
+
+mktempdir() do path
+    open(Connection, path) do db
+        table = create_table(db, "items", DataFrame(id=[1], text=["cat"]))
+        try
+            initial_version = table_version(table)
+            add(table, DataFrame(id=[2], text=["dog"]))
+            set_metadata!(table, Dict("source" => "training-set"))
+            println(get_metadata(table))
+            history = DataFrame(list_versions(table))
+            println(select(history, :version, :timestamp))
+            @assert table_version(table) > initial_version
+        finally
+            close(table)
+        end
+    end
+end
 ```
 
-Version listing does not provide checkout, rollback or snapshot pinning. See [Capabilities and ownership](capabilities.md) for the remaining C API gaps.
+`list_versions` returns history ordered by version, including metadata. `timestamp` is a UTC `DateTime` at millisecond precision; `timestamp_seconds` and `timestamp_nanos` preserve the original timestamp without rounding. Listing history does not change the table's current version.
+
+Use `optimize(table; type=OptimizeCompact)` for compaction without requesting version pruning. `OptimizePrune` cleans old versions according to the native retention policy; the default `OptimizeAll` includes pruning. The current interface cannot customize the retention interval or return cleanup statistics. Pruning can make historical data unavailable to other clients.
+
+Python's `checkout`, `checkout_latest`, `restore`, and version tags are not exposed by the current C interface. They are not implemented here; reopening a table is not a substitute for restoring or pinning a version.
 
 ## Object storage
 

@@ -182,7 +182,11 @@ Tables.materializer(tbl::Table) = data -> (add(tbl, data); tbl)
 """
     optimize(tbl; type=OptimizeAll)
 
-Compact files and/or prune old versions.
+Compact files and/or prune old versions. Use `OptimizeCompact` for compaction
+only, `OptimizeIndex` to update indexes, or `OptimizePrune` to clean old versions
+according to the native retention policy. `OptimizeAll` includes pruning.
+The C API does not expose a custom retention interval or cleanup statistics.
+Pruned history may no longer be recoverable by other clients.
 """
 function optimize(tbl::Table; type::OptimizeType=OptimizeAll)
     _assert_live(tbl)

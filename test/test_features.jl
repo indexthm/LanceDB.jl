@@ -161,6 +161,13 @@ end
                 @test length(versions) >= 3
                 @test last(versions).version == table_version(t)
                 @test Tables.istable(typeof(versions))
+                @test issorted(v.version for v in versions)
+                @test all(v -> v.timestamp == LanceDB.DateTime(1970) +
+                    LanceDB.Second(v.timestamp_seconds) + LanceDB.Millisecond(v.timestamp_nanos ÷ 1_000_000), versions)
+                before = table_version(t)
+                add(t, (id=[4], embedding=[Float32[0,0]]))
+                @test last(list_versions(t)).version == table_version(t) > before
+                @test last(versions).version == before
                 q = query(t) |> filter_expr(0 < col(:id)) |> limit(2)
                 @test !isempty(explain_plan(q))
                 @test isopen(q)
@@ -169,7 +176,7 @@ end
                 @test !isempty(explain_plan(q; verbose=true))
                 @test Tables.columns(execute(q)).id == [1]
                 delete_rows(t, col(:id) == lit(2))
-                @test count_rows(t) == 2
+                @test count_rows(t) == 3
                 @test_throws ArgumentError set_metadata!(t, Dict("bad\0key"=>"x"))
             finally
                 close(t)

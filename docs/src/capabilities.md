@@ -46,7 +46,7 @@ Each append is a separate commit: an error does not undo earlier batches. A data
 ## Current limitations
 
 - FTS indexes can be created, but full-text queries and hybrid search are not available yet.
-- Version history can be listed, but checkout/restore, schema alteration and general row-update expressions are unavailable.
+- Version history can be listed with UTC timestamps and metadata. Native version pruning is available through `optimize`, but custom retention, checkout/restore, version tags, schema alteration and general row-update expressions are unavailable.
 - Video bytes can be stored and read, but extracting frames requires a decoder. Lazy Blob/range reads are not available.
 - Namespaces and table rename depend on the backend. S3 connection examples are in the user guide; real cloud authentication is not covered by the local test suite.
 - Supported input types include integers, Float32/Float64, Bool, strings, missing values, binary/list columns, nested records and Date/DateTime/Time. Decimal and other temporal formats are not supported.
