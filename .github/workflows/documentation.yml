@@ -17,11 +17,6 @@ jobs:
     permissions:
       contents: write
       statuses: write
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
@@ -37,18 +32,28 @@ jobs:
         run: julia --color=yes --project=docs docs/make.jl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy:
+    needs: docs
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       # GITHUB_TOKEN pushes do not trigger a separate Pages build.
       - name: Check out versioned documentation
-        if: github.event_name != 'pull_request'
         uses: actions/checkout@v7
         with:
           ref: gh-pages
           path: .pages
       - uses: actions/upload-pages-artifact@v5
-        if: github.event_name != 'pull_request'
         with:
           path: .pages
       - name: Publish Pages
-        if: github.event_name != 'pull_request'
         id: deployment
         uses: actions/deploy-pages@v5
