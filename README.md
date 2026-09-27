@@ -55,7 +55,7 @@ The benchmark reports Julia allocations and warmed timings; it excludes native R
 
 ### Conversion benchmark
 
-On Windows with Julia 1.13.0, Arrow 2.8.1 and LanceDB_C_jll 0.33.0+0, removing the unused Arrow import left conversion allocations effectively unchanged. Numeric input used 720 bytes before and after; string and vector input used about 221 KB and 321 KB. The conversion implementation was unchanged. Short timings varied between runs and did not establish a regression.
+On Windows with Julia 1.13.0, Arrow 2.8.1 and lancedb-c 0.33.0, removing the unused Arrow import left conversion allocations effectively unchanged. Numeric input used 720 bytes before and after; string and vector input used about 221 KB and 321 KB. The conversion implementation was unchanged. Short timings varied between runs and did not establish a regression.
 
 For a 20,000-row `Arrow.Table` with Int64 and Float64 columns, the optional extension produced:
 
@@ -77,7 +77,7 @@ Documenter writes HTML to `docs/build/`. GitHub Actions builds the same document
 
 ### Updating the C bindings
 
-The bindings are maintained by hand. The separate `gen/` environment uses Clang only for maintenance; it is not a runtime, test or documentation dependency. Generate reference output from the JLL artifact's header with:
+The bindings are maintained by hand. The separate `gen/` environment uses Clang only for maintenance; it is not a runtime, test or documentation dependency. Generate reference output from the bundled lancedb-c header with:
 
 ```sh
 julia --project=gen -e 'using Pkg; Pkg.instantiate()'

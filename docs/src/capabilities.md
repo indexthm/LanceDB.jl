@@ -1,6 +1,6 @@
 # Supported features and usage notes
 
-The native library is supplied by `LanceDB_C_jll` (lancedb-c 0.33). The available operations are summarized below; see the examples in the [user guide](guide.md) and [multimodal guide](multimodal.md).
+This package uses [lancedb-c](https://github.com/lancedb/lancedb-c) 0.33. The available operations are summarized below; see the examples in the [user guide](guide.md) and [multimodal guide](multimodal.md).
 
 | Task | Functions |
 |---|---|

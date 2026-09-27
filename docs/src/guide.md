@@ -131,7 +131,7 @@ The current bindings do not expose Python's read-consistency interval or per-tab
 
 Video data is read as complete byte values. Use a video decoder to extract frames, or store pre-extracted frames as individual rows for sampling. Lazy video/Blob range reads are not available yet.
 
-See the upstream [storage guide](https://docs.lancedb.com/storage) and [Lance Blob guide](https://lance.org/guide/blob/). Their latest examples may require newer native versions than the JLL used here.
+See the upstream [storage guide](https://docs.lancedb.com/storage) and [Lance Blob guide](https://lance.org/guide/blob/). Their latest examples may require a newer lancedb-c version than the one supported here.
 
 ## Optional integrations
 

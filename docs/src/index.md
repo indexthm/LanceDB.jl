@@ -1,6 +1,6 @@
 # LanceDB.jl
 
-LanceDB.jl wraps the LanceDB C API through `LanceDB_C_jll`, with Tables.jl integration, vector queries, binary media columns and ID-based training batches. Julia 1.10 or later is required. No Python or native build toolchain is needed. The API is experimental and targets the lancedb-c 0.33 ABI.
+LanceDB.jl provides Julia bindings for [lancedb-c](https://github.com/lancedb/lancedb-c), with Tables.jl integration, vector queries, binary media columns and ID-based training batches. Julia 1.10 or later is required. No Python or native build toolchain is needed. The API is experimental and targets the lancedb-c 0.33 ABI.
 
 - [Tables, queries and object storage](guide.md)
 - [Multimodal data and training batches](multimodal.md)
@@ -19,7 +19,7 @@ To use the checkout from another project, run `Pkg.develop(path="/path/to/LanceD
 
 ## Create and search a table
 
-This example is executed during the documentation build. It creates a fresh temporary database, uses the published JLL and closes its handles explicitly.
+This example is executed during the documentation build. It creates a fresh temporary database and closes its handles explicitly.
 
 ```@example quickstart
 using LanceDB, DataFrames
