@@ -13,6 +13,8 @@
             close(db)
             @test reopen!(db) === db
             table = create_table(db,"items",(id=[1,2],))
+            @test_throws ArgumentError vector_search(table,Float32[NaN])
+            @test_throws ArgumentError vector_search(table,[1e100])
             q = query(table)
             @test_throws ArgumentError limit(q,-1)
             close(q)

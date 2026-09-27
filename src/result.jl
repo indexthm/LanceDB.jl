@@ -200,6 +200,11 @@ function _read_column(arr::ArrowArray, fmt::String, schema::Union{Nothing,ArrowS
             end
         end
         return fmt in ("z","Z") ? BinaryColumn(out;large=fmt == "Z") : out
+    elseif startswith(fmt, "w:")
+        width = parse(Int, fmt[3:end])
+        bytes = Ptr{UInt8}(unsafe_load(bufs, 2))
+        T = has_nulls ? Union{Missing,Vector{UInt8}} : Vector{UInt8}
+        return BinaryColumn(T[valid(i) ? _copy_bytes(bytes+(offset+i-1)*width,width) : missing for i in 1:n])
     elseif fmt == "+s"
         schema === nothing && throw(ArgumentError("struct import requires a child schema"))
         children = [_read_column(unsafe_load(unsafe_load(Ptr{Ptr{ArrowArray}}(arr.children), i)),
@@ -209,7 +214,8 @@ function _read_column(arr::ArrowArray, fmt::String, schema::Union{Nothing,ArrowS
         names = Tuple(Symbol(unsafe_string(unsafe_load(unsafe_load(Ptr{Ptr{ArrowSchema}}(schema.children), i)).name))
                       for i in 1:Int(schema.n_children))
         Row = NamedTuple{names,Tuple{eltype.(children)...}}
-        return Union{Missing,Row}[valid(i) ? Row(Tuple(c[offset+i] for c in children)) : missing for i in 1:n]
+        T = has_nulls ? Union{Missing,Row} : Row
+        return T[valid(i) ? Row(Tuple(c[offset+i] for c in children)) : missing for i in 1:n]
     elseif startswith(fmt, "+w:") || fmt in ("+l", "+L")
         child = unsafe_load(unsafe_load(Ptr{Ptr{ArrowArray}}(arr.children)))
         # Two-argument internal callers historically constructed Float32 lists.

@@ -17,12 +17,16 @@ function _validated_ids(ids)
 end
 
 function _schema_type(field)
+    if field.dictionary !== nothing
+        T = _schema_type(field.dictionary)
+        return field.nullable ? Union{Missing,T} : T
+    end
     fmt = field.format
     T = if fmt == "n"
         Missing
     elseif fmt in ("u","U")
         String
-    elseif fmt in ("z","Z")
+    elseif fmt in ("z","Z") || startswith(fmt,"w:")
         Vector{UInt8}
     elseif fmt == "b"
         Bool
@@ -57,7 +61,7 @@ function _id_projection(tbl, id_column, columns)
         idx === nothing && throw(ArgumentError("column does not exist: $name"))
         field = fields[idx]
         values = Vector{_schema_type(field)}()
-        field.format in ("z","Z") && return BinaryColumn(values;large=field.format == "Z")
+        (field.format in ("z","Z") || startswith(field.format,"w:")) && return BinaryColumn(values;large=field.format == "Z")
         field.format in ("+l","+L") && return ListColumn(values;large=field.format == "+L")
         values
     end

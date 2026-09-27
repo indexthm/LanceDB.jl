@@ -6,15 +6,17 @@ function _schema_description(ptr::Ptr{ArrowSchema})
     children = [_schema_description(unsafe_load(Ptr{Ptr{ArrowSchema}}(s.children), i))
                 for i in 1:Int(s.n_children)]
     (; name=s.name == C_NULL ? "" : unsafe_string(s.name),
-       format=unsafe_string(s.format), nullable=(s.flags & 2) != 0, children)
+       format=unsafe_string(s.format), nullable=(s.flags & 2) != 0, children,
+       dictionary=s.dictionary == C_NULL ? nothing : _schema_description(Ptr{ArrowSchema}(s.dictionary)))
 end
 
 """
     table_schema(table)
 
 Return the Arrow schema as a Julia tree of named tuples (`name`, `format`,
-`nullable`, `children`). This preserves exact Arrow type descriptions even
-for types not yet supported by the Julia data converter.
+`nullable`, `children`, `dictionary`). Field metadata and extension metadata
+are not included. Physical type descriptions remain available for types not
+yet supported by the Julia data converter.
 """
 function table_schema(tbl::Table)
     _assert_live(tbl)

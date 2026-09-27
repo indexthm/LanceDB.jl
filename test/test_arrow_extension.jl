@@ -27,7 +27,9 @@ end
         lists=Union{Missing,Vector{Int32}}[[1,2],missing,[]],
         embedding=Union{Missing,NTuple{2,Float32}}[(1,2),missing,(3,4)],
         value=Union{Missing,Float64}[1,missing,3],
-        text=Union{Missing,String}["hello",missing,"你好"])
+        text=Union{Missing,String}["hello",missing,"你好"],
+        fixedbytes=Union{Missing,NTuple{2,UInt8}}[(1,2),missing,(3,4)],
+        nested=[(values=Int32[1],),(values=Int32[],),(values=Int32[2,3],)])
     for large in (false,true)
         input = ipc_table(source; largelists=large)
         array,schema,pins = LanceDB._to_arrow_c_abi(input)
@@ -53,6 +55,16 @@ end
                     @test isequal(rows.embedding,[Float32[1,2],missing,Float32[3,4]])
                     @test isequal(rows.value,source.value)
                     @test isequal(rows.text,source.text)
+                    @test isequal(rows.fixedbytes,[UInt8[1,2],missing,UInt8[3,4]])
+                    @test rows.fixedbytes isa BinaryColumn
+                    @test rows.nested == source.nested
+                    result=execute(query(table))
+                    try
+                        exported=ipc_table(result)
+                        @test sort(collect(exported.id)) == [1,2,3]
+                    finally
+                        close(result)
+                    end
                 finally
                     close(table)
                 end

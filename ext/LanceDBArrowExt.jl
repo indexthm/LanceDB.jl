@@ -48,4 +48,23 @@ function LanceDB._column_to_arrow(col::Arrow.FixedSizeList{T}, name, pins) where
     LanceDB._nested_arrow(col, name, "+w:$width", pins, [child], [schema], Ptr{Cvoid}[])
 end
 
+function LanceDB._column_to_arrow(col::Arrow.Struct{T}, name, pins) where T
+    S = Base.nonmissingtype(T)
+    S <: NamedTuple || return invoke(LanceDB._column_to_arrow, Tuple{Any,Any,Any}, col, name, pins)
+    push!(pins, col)
+    arrays, schemas = Ptr{LanceDB.ArrowArray}[], Ptr{LanceDB.ArrowSchema}[]
+    try
+        for (field, values) in zip(fieldnames(S), col.data)
+            array, schema = LanceDB._column_to_arrow(values, String(field), pins)
+            push!(arrays, array)
+            push!(schemas, schema)
+        end
+    catch
+        foreach(LanceDB._free_array_tree, arrays)
+        foreach(LanceDB.release_arrow_schema, schemas)
+        rethrow()
+    end
+    LanceDB._nested_arrow(col, name, "+s", pins, arrays, schemas, Ptr{Cvoid}[])
+end
+
 end

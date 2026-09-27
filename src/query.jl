@@ -185,6 +185,7 @@ mutable struct VectorQuery
         _assert_live(tbl)
         column === nothing || _check_string(column)
         isempty(vec) && throw(ArgumentError("query vector cannot be empty"))
+        all(isfinite, vec) || throw(ArgumentError("query vector must contain finite Float32 values"))
         GC.@preserve tbl vec begin
             handle = lancedb_vector_query_new(tbl.handle, pointer(vec), Csize_t(length(vec)))
         end
@@ -193,7 +194,12 @@ mutable struct VectorQuery
         finalizer(close, vq)
         if !isnothing(column)
             errmsg = Ref{Ptr{UInt8}}(C_NULL)
-            check(lancedb_vector_query_column(vq.handle, column, errmsg), errmsg)
+            try
+                GC.@preserve vq check(lancedb_vector_query_column(vq.handle, column, errmsg), errmsg)
+            catch
+                close(vq)
+                rethrow()
+            end
         end
         vq
     end
