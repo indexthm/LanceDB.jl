@@ -76,4 +76,3 @@ end
         release_arrow_schema(schema)
     end
 end
-
