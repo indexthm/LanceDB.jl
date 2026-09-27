@@ -37,7 +37,10 @@ primitive type LanceDBRecordBatchReaderHandle 64 end
     LANCEDB_ARROW                      = 18
     LANCEDB_NOT_SUPPORTED              = 19
     LANCEDB_OTHER                      = 20
-    LANCEDB_UNKNOWN                    = 21
+    LANCEDB_NAMESPACE                  = 21
+    LANCEDB_PERMISSION_DENIED          = 22
+    LANCEDB_NOT_FOUND                  = 23
+    LANCEDB_UNKNOWN                    = 99
 end
 
 """
@@ -64,7 +67,7 @@ Type of index to create.
 
 Vector index types (used with `create_vector_index`):
 - `Auto`      — let LanceDB choose (default)
-- `IVFFlat`   — inverted file with flat quantization (requires ≥256 rows)
+- `IVFFlat`   — inverted file with flat quantization
 - `IVFPQ`     — inverted file with product quantization
 - `IVFHNSWpq` — IVF + HNSW + product quantization
 - `IVFHNSWsq` — IVF + HNSW + scalar quantization
@@ -151,11 +154,13 @@ mutable struct LanceDBVectorIndexConfig
     max_iterations::Cint
     sample_rate::Cfloat
     distance_type::Cint   # DistanceType
-    accelerator::Ptr{UInt8}
     replace::Cint
 end
 
-LanceDBVectorIndexConfig() = LanceDBVectorIndexConfig(-1, -1, -1, 0.0f0, Int32(L2), C_NULL, 0)
+LanceDBVectorIndexConfig(; num_partitions=-1, num_sub_vectors=-1, max_iterations=-1,
+                        sample_rate=0.0f0, distance_type::DistanceType=L2, replace::Bool=false) =
+    LanceDBVectorIndexConfig(num_partitions, num_sub_vectors, max_iterations,
+                            sample_rate, Int32(distance_type), Int(replace))
 
 """
     LanceDBScalarIndexConfig()
@@ -164,14 +169,12 @@ Configuration for `create_scalar_index`.
 
 # Fields
 - `replace`                  — `1` to replace an existing index
-- `force_update_statistics`  — `1` to recompute statistics even if up to date
 """
 mutable struct LanceDBScalarIndexConfig
     replace::Cint
-    force_update_statistics::Cint
 end
 
-LanceDBScalarIndexConfig() = LanceDBScalarIndexConfig(0, 0)
+LanceDBScalarIndexConfig(; replace::Bool=false) = LanceDBScalarIndexConfig(Int(replace))
 
 """
     LanceDBFtsIndexConfig()
@@ -181,7 +184,7 @@ Configuration for `create_fts_index`.
 # Fields
 - `base_tokenizer`   — tokenizer name (C_NULL → `"simple"`)
 - `language`         — language for stemming/stop-words (C_NULL → `"English"`)
-- `max_tokens`       — maximum token length; `-1` means no limit
+- `max_token_length` — maximum token length; `-1` means no limit
 - `lowercase`        — `1` to lowercase tokens before indexing (default)
 - `stem`             — `1` to apply stemming
 - `remove_stop_words`— `1` to drop common stop words
@@ -191,7 +194,7 @@ Configuration for `create_fts_index`.
 mutable struct LanceDBFtsIndexConfig
     base_tokenizer::Ptr{UInt8}
     language::Ptr{UInt8}
-    max_tokens::Cint
+    max_token_length::Cint
     lowercase::Cint
     stem::Cint
     remove_stop_words::Cint
@@ -210,12 +213,22 @@ which is the standard upsert behaviour.
 # Fields
 - `when_matched_update_all`    — `1` to overwrite every column of a matching row
 - `when_not_matched_insert_all`— `1` to insert rows whose key is not found
+- `when_matched_update_all_condition` — optional C string containing a SQL condition
+- `when_matched_update_all_expr` — optional expression handle (alternative to SQL)
+
+Both condition pointers default to NULL. If setting either pointer directly,
+keep its owning string or expression alive with `GC.@preserve` for the entire
+`merge_insert` call. The expression is borrowed, not consumed.
 """
 mutable struct LanceDBMergeInsertConfig
     when_matched_update_all::Cint
     when_not_matched_insert_all::Cint
+    when_matched_update_all_condition::Ptr{UInt8}
+    when_matched_update_all_expr::Ptr{LanceDBExprHandle}
 end
 
+LanceDBMergeInsertConfig(update::Integer, insert::Integer) =
+    LanceDBMergeInsertConfig(update, insert, C_NULL, C_NULL)
 LanceDBMergeInsertConfig() = LanceDBMergeInsertConfig(1, 1)
 
 """
@@ -241,13 +254,13 @@ mutable struct LanceDBSessionCacheStats
     size_bytes::Csize_t
 end
 
-mutable struct LanceDBVersion
+struct LanceDBVersion
     version::UInt64
     timestamp_seconds::Int64
     timestamp_nanos::UInt32
 end
 
-mutable struct LanceDBVersionMetadata
+struct LanceDBVersionMetadata
     keys::Ptr{Ptr{UInt8}}
     values::Ptr{Ptr{UInt8}}
     count::Csize_t

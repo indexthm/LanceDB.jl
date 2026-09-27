@@ -2,29 +2,22 @@ module LanceDB
 
 using Arrow
 using Tables
+import LanceDB_C_jll
 
 # ── Library path ──────────────────────────────────────────────────────────────
-# Development default: relative to this file, up to julia-lance/lancedb-c/build/...
 # Override by setting LANCEDB_LIB environment variable before loading the module.
-# When LanceDB_jll is published, replace this with `using LanceDB_jll`.
 const liblancedb = let
     from_env = get(ENV, "LANCEDB_LIB", "")
     if !isempty(from_env)
         from_env
     else
-        candidate = normpath(joinpath(@__DIR__, "..", "..", "lancedb-c",
-                                      "build", "target", "release", "liblancedb.so"))
-        isfile(candidate) || error(
-            "liblancedb.so not found at $candidate\n" *
-            "Either build lancedb-c first or set the LANCEDB_LIB environment variable."
-        )
-        candidate
+        LanceDB_C_jll.liblancedb
     end
 end
 
 # ── Source includes (order matters) ──────────────────────────────────────────
 include("ctypes.jl")      # primitive handle types, enums, C value-type structs
-include("api.jl")         # raw ccall wrappers  (PLACEHOLDER — regenerate via gen/)
+include("api.jl")         # raw ccall wrappers matching the published C ABI
 include("error.jl")       # LanceDBException, check(), check_ptr()
 include("arrow_abi.jl")   # ArrowSchema / ArrowArray layout + schema builders
 include("arrow_data.jl")  # Tables.jl → Arrow C ABI (_to_arrow_c_abi, _make_reader)

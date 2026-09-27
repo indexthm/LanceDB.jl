@@ -4,6 +4,7 @@ using Tables
 
 @testset "LanceDB.jl" begin
     include("test_connection.jl")
+    include("test_current_abi.jl")
     include("test_isopen_reopen.jl")
     include("test_table.jl")
     include("test_query.jl")

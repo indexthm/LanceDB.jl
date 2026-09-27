@@ -5,19 +5,17 @@ authors = ["Anand Bisen <asbisen@icloud.com>"]
 
 [deps]
 Arrow = "69666777-d1a9-59fb-9406-91d4454c9d45"
+LanceDB_C_jll = "61f6e4a7-1560-5505-89b0-69e5d761f997"
 Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 
 [compat]
 julia = "1.10"
 Arrow = "2"
+LanceDB_C_jll = "0.33"
 Tables = "1"
 
 [extras]
-Test = "8dfed614-e22c-358a-adce-346d6226a54e"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
 test = ["Test"]
-
-# Note: Test is a Julia stdlib; the UUID above is correct for Julia ≥1.6.
-# If Pkg.test() fails to resolve it, run tests directly:
-#   julia --project=. test/runtests.jl

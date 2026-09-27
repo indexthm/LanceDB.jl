@@ -38,9 +38,10 @@ function _build_handle(uri, storage_options, session)
         check_ptr(builder, "lancedb_connect_builder_session returned NULL")
     end
 
-    handle = lancedb_connect_builder_execute(builder)
-    check_ptr(handle, "lancedb_connect_builder_execute returned NULL for uri: $uri")
-    handle
+    connection = Ref{Ptr{LanceDBConnectionHandle}}(C_NULL)
+    errmsg = Ref{Ptr{UInt8}}(C_NULL)
+    check(lancedb_connect_builder_execute(builder, connection, errmsg), errmsg)
+    check_ptr(connection[], "lancedb_connect_builder_execute returned NULL for uri: $uri")
 end
 
 """
@@ -130,7 +131,10 @@ end
 Open an existing table. Throws `LanceDBException` if the table does not exist.
 """
 function open_table(conn::Connection, name::AbstractString)::Table
-    handle = lancedb_connection_open_table(conn.handle, name)
+    output = Ref{Ptr{LanceDBTableHandle}}(C_NULL)
+    errmsg = Ref{Ptr{UInt8}}(C_NULL)
+    check(lancedb_connection_open_table(conn.handle, name, output, errmsg), errmsg)
+    handle = output[]
     check_ptr(handle, "table not found: $name")
     tbl = Table(handle, String(name))
     finalizer(t -> t.handle != C_NULL && lancedb_table_free(t.handle), tbl)

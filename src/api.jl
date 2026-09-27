@@ -1,6 +1,5 @@
-# PLACEHOLDER — hand-written wrapper matching lancedb-c v0.22.3 header.
-# Replace by running: julia --project=gen gen/generator.jl
-# after updating gen/lancedb.h to the target release.
+# Hand-written wrappers matching the header shipped with LanceDB_C_jll 0.33.0+0.
+# Recheck signatures and ctypes.jl layouts together when updating the JLL.
 #
 # Signatures are derived directly from lancedb-c/include/lancedb.h.
 # All C enums are passed/returned as Cint.
@@ -14,9 +13,12 @@ function lancedb_connect(uri::AbstractString)
           Ptr{LanceDBConnectBuilderHandle}, (Cstring,), uri)
 end
 
-function lancedb_connect_builder_execute(builder::Ptr{LanceDBConnectBuilderHandle})
+function lancedb_connect_builder_execute(builder::Ptr{LanceDBConnectBuilderHandle},
+                                         connection::Ref{Ptr{LanceDBConnectionHandle}},
+                                         errmsg::Ref{Ptr{UInt8}})
     ccall((:lancedb_connect_builder_execute, liblancedb),
-          Ptr{LanceDBConnectionHandle}, (Ptr{LanceDBConnectBuilderHandle},), builder)
+          Cint, (Ptr{LanceDBConnectBuilderHandle}, Ref{Ptr{LanceDBConnectionHandle}}, Ref{Ptr{UInt8}}),
+          builder, connection, errmsg)
 end
 
 function lancedb_connect_builder_storage_option(builder::Ptr{LanceDBConnectBuilderHandle},
@@ -61,9 +63,12 @@ function lancedb_free_table_names(names::Ptr{Ptr{UInt8}}, count::Csize_t)
           Cvoid, (Ptr{Ptr{UInt8}}, Csize_t), names, count)
 end
 
-function lancedb_connection_open_table(conn::Ptr{LanceDBConnectionHandle}, name::AbstractString)
+function lancedb_connection_open_table(conn::Ptr{LanceDBConnectionHandle}, name::AbstractString,
+                                       table_out::Ref{Ptr{LanceDBTableHandle}},
+                                       errmsg::Ref{Ptr{UInt8}})
     ccall((:lancedb_connection_open_table, liblancedb),
-          Ptr{LanceDBTableHandle}, (Ptr{LanceDBConnectionHandle}, Cstring), conn, name)
+          Cint, (Ptr{LanceDBConnectionHandle}, Cstring, Ref{Ptr{LanceDBTableHandle}}, Ref{Ptr{UInt8}}),
+          conn, name, table_out, errmsg)
 end
 
 function lancedb_connection_drop_table(conn::Ptr{LanceDBConnectionHandle},
