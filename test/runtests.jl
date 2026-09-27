@@ -25,4 +25,6 @@ using Tables
     include("test_index.jl")
     include("test_expr_filter.jl")
     include("test_integration.jl")
+    include("test_arrow_extension.jl")
+    include("test_dataframes.jl")
 end
