@@ -64,8 +64,19 @@
         cfg = LanceDBFtsIndexConfig()
         cfg.lowercase = 1
         cfg.stem      = 0
-        create_fts_index(tbl, "doc"; config=cfg)
+        create_fts_index(tbl, :doc; config=cfg, stem=true, remove_stop_words=true,
+                         ascii_folding=true, max_token_length=40, language="English")
+        @test cfg.stem == 0
+        @test cfg.max_token_length == -1
         @test "doc_idx" in list_indices(tbl)
+        @test_throws LanceDBException create_fts_index(tbl, :doc; replace=false)
+        create_fts_index(tbl, :doc; replace=true, max_token_length=-1)
+        @test index_stats(tbl, "doc_idx").num_indexed_rows == 2
+        @test_throws ArgumentError create_fts_index(tbl, String[])
+        @test_throws ArgumentError create_fts_index(tbl, ["doc", "doc"])
+        @test_throws ArgumentError create_fts_index(tbl, :doc; max_token_length=-2)
+        @test_throws ArgumentError create_fts_index(tbl, :doc; max_token_length=big(typemax(Cint))+1)
+        @test_throws ArgumentError create_fts_index(tbl, :doc; language="bad\0language")
 
         close(tbl); close(conn)
     end

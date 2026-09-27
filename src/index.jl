@@ -81,7 +81,11 @@ Build a full-text search (FTS) index on a UTF-8 string `column`. The index
 is named `\${column}_idx`. The current C API supports creating the index but
 does not expose a full-text query builder. Tokenization
 options (language, stemming, stop words, etc.) are set via
-`LanceDBFtsIndexConfig`.
+`LanceDBFtsIndexConfig`. Alternatively pass `lowercase`, `stem`,
+`remove_stop_words`, `ascii_folding`, `replace`, and `max_token_length` as
+keywords. Keywords override a copy of `config`; the original is unchanged.
+`max_token_length=-1` removes the limit. `replace=false` is the default.
+Use `base_tokenizer` and `language` keywords for strings instead of raw pointers.
 
 ```julia
 create_fts_index(tbl, "title")
@@ -95,11 +99,31 @@ create_fts_index(tbl, "body"; config=cfg)
 function create_fts_index(tbl::Table, columns::Vector{String};
                            config::LanceDBFtsIndexConfig=LanceDBFtsIndexConfig(),
                            base_tokenizer::Union{Nothing,AbstractString}=nothing,
-                           language::Union{Nothing,AbstractString}=nothing)
+                           language::Union{Nothing,AbstractString}=nothing,
+                           max_token_length::Union{Nothing,Integer}=nothing,
+                           lowercase::Union{Nothing,Bool}=nothing,
+                           stem::Union{Nothing,Bool}=nothing,
+                           remove_stop_words::Union{Nothing,Bool}=nothing,
+                           ascii_folding::Union{Nothing,Bool}=nothing,
+                           replace::Union{Nothing,Bool}=nothing)
     _assert_live(tbl)
     tokenizer_owner = base_tokenizer === nothing ? nothing : String(_check_string(base_tokenizer))
     language_owner = language === nothing ? nothing : String(_check_string(language))
+    isempty(columns) && throw(ArgumentError("specify at least one FTS column"))
+    allunique(columns) || throw(ArgumentError("FTS columns must be unique"))
+    all(!isempty, columns) || throw(ArgumentError("FTS column names cannot be empty"))
     config = deepcopy(config)
+    if max_token_length !== nothing
+        -1 <= max_token_length <= typemax(Cint) ||
+            throw(ArgumentError("max_token_length must be -1 or a nonnegative Cint"))
+        config.max_token_length = Cint(max_token_length)
+    end
+    for (field, value) in ((:lowercase, lowercase), (:stem, stem),
+                           (:remove_stop_words, remove_stop_words),
+                           (:ascii_folding, ascii_folding), (:replace, replace))
+        value === nothing || setfield!(config, field, Cint(value))
+        getfield(config, field) in (0, 1) || throw(ArgumentError("$field must be 0 or 1"))
+    end
     tokenizer_owner === nothing || (config.base_tokenizer = pointer(tokenizer_owner))
     language_owner === nothing || (config.language = pointer(language_owner))
     GC.@preserve tbl tokenizer_owner language_owner begin

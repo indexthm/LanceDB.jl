@@ -75,7 +75,29 @@ result = execute(q)
 
 This fragment assumes an existing table with an `embedding` column and sufficient training rows. Configure the index and query with the same distance metric. `nprobes`, `refine_factor` and `ef` control the corresponding native search parameters. Close `result` when finished.
 
-Use `list_indices`, `index_stats`, `drop_index` and `optimize` to manage indexes. `create_fts_index` can build a full-text index, but the current C ABI does not expose a full-text query builder or native hybrid search.
+Use `list_indices`, `index_stats`, `drop_index` and `optimize` to manage indexes.
+
+### Full-text indexes
+
+For an existing string column, configure tokenization with keywords:
+
+```julia
+create_fts_index(table, :text;
+    base_tokenizer="simple", language="English",
+    lowercase=true, stem=true, remove_stop_words=true,
+    ascii_folding=true, max_token_length=40)
+println(list_indices(table))
+println(index_stats(table, "text_idx"))
+
+# Replace an existing index explicitly.
+create_fts_index(table, :text; replace=true)
+# After appending rows, update indexes to include them.
+optimize(table; type=OptimizeIndex)
+```
+
+`replace` defaults to `false`. `max_token_length=-1` removes the token-length limit. Other omitted keywords retain the supplied `LanceDBFtsIndexConfig` values; the configuration object is not modified. When replacing an index, specify the desired tokenization options again: options are not inherited from the old index.
+
+These operations build and maintain native FTS indexes. Full-text queries, relevance scores and full-text/vector hybrid queries remain unavailable through lancedb-c. A SQL string filter is not a substitute for indexed full-text search.
 
 ## Metadata and versions
 
