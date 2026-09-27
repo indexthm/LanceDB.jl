@@ -137,9 +137,7 @@ See the upstream [storage guide](https://docs.lancedb.com/storage) and [Lance Bl
 
 ### CSV files
 
-Install CSV.jl in your application with `Pkg.add("CSV")`. Loading it enables
-`import_csv` for creating or appending to a table. CSV parsing options such as
-`delim`, `types` and `missingstring` can be passed directly.
+Install CSV.jl in your application with `Pkg.add("CSV")`. Loading it enables `import_csv` for creating or appending to a table. CSV parsing options such as `delim`, `types` and `missingstring` can be passed directly.
 
 ```@example csv
 using LanceDB, CSV, DataFrames
@@ -159,6 +157,36 @@ end
 ```
 
 Pass a file path, such as `import_csv(db, "items", "items.csv")`, to read from disk. Invalid values in explicitly typed columns raise an error by default; `strict=false` selects CSV.jl's more permissive behavior. Ordinary imports parse the input before writing. For larger files, use `append_partitions!(table, CSV.Chunks("items.csv"; types=...))` with consistent column types; each chunk is committed separately.
+
+### JSON files
+
+Install JSON.jl with `Pkg.add("JSON")`, then load it to enable `import_json`. It accepts an array of row objects, an object whose values are column arrays, or JSON Lines. Pass a file path to read a file; wrap JSON text in `IOBuffer`.
+
+```@example json
+using LanceDB, JSON, DataFrames
+
+mktempdir() do path
+    open(Connection, path) do db
+        rows = IOBuffer("""[{"id":1,"text":"cat","embedding":[1,0]}]""")
+        table = import_json(db, "items", rows; vector_columns=[:embedding])
+        try
+            columns = IOBuffer("""{"id":[2],"text":["dog"],"embedding":[[0,1]]}""")
+            import_json(table, columns; vector_columns=[:embedding])
+            lines = IOBuffer("""{"id":3,"text":"bird","embedding":[1,1]}""")
+            import_json(table, lines; jsonlines=true, vector_columns=[:embedding])
+            println(DataFrame(take_ids(table, [1, 3])))
+        finally
+            close(table)
+        end
+    end
+end
+```
+
+Files ending in `.jsonl` or `.ndjson` select JSON Lines automatically: `import_json(db, "items", "items.jsonl")`. For IO, pass `jsonlines=true`. All three formats are parsed in memory before writing; JSON Lines is not a streaming import.
+
+JSON nulls and absent fields become `missing`. Ordinary floating columns use Float64. Array-valued fields are variable-length lists by default; mark embedding columns with `vector_columns=[:embedding]` to require equal-length numeric vectors. These vectors default to Float32. To preserve Float64 vector values, also pass `types=Dict(:embedding=>Vector{Float64})`. Search query inputs still convert to Float32 because that is what the lancedb-c search interface accepts.
+
+Use `types` to set other column types, such as `Dict(:score=>Float64, :tags=>Vector{String})`. Explicit types are needed for empty lists with no inferable elements or an empty row array. Flatten nested objects and nested arrays before importing. When appending, use types and vector-column selections consistent with the existing table.
 
 ### Arrow and DataFrames
 

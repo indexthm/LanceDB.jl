@@ -215,6 +215,9 @@ end
     vector_search(tbl, vec, column) -> VectorQuery
     vector_search(tbl, vec)         -> VectorQuery
 
+Query inputs are converted to Float32, as required by the lancedb-c search API,
+even when the stored vector column uses Float64.
+
 Start an approximate nearest-neighbour (ANN) search for rows whose
 `column` embedding is closest to `vec`. Chain builder methods before
 calling `execute`:
