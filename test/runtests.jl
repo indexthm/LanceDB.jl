@@ -8,6 +8,7 @@ using Tables
     include("test_resources.jl")
     include("test_arrow_export.jl")
     include("test_arrow_nested.jl")
+    include("test_features.jl")
     include("test_isopen_reopen.jl")
     include("test_table.jl")
     include("test_query.jl")
