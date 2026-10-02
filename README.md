@@ -1,8 +1,9 @@
 # LanceDB.jl
 
-Julia bindings for [lancedb-c](https://github.com/lancedb/lancedb-c), the C API for LanceDB. Tables.jl connects ingestion and query results to the Julia data ecosystem. The API is experimental.
+[![Build Status](https://github.com/indexthm/LanceDB.jl/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/indexthm/LanceDB.jl/actions/workflows/test.yml?query=branch%3Amain)
+[![](https://img.shields.io/badge/docs-dev-blue.svg)](https://indexthm.github.io/LanceDB.jl/dev/)
 
-[Documentation](https://indexthm.github.io/LanceDB.jl/dev/) · [User guide](docs/src/guide.md) · [Capabilities and limits](docs/src/capabilities.md)
+Julia bindings for [lancedb-c](https://github.com/lancedb/lancedb-c), the C API for LanceDB. Tables.jl connects ingestion and query results to the Julia data ecosystem. The API is experimental.
 
 ## Getting started
 
